@@ -19,8 +19,9 @@ These are the features in order:
     - [x] Integer literals
 - [ ] Array literals
 - [ ] String literals
+- [ ] Pointers
 - [ ] Control flow statements\
-   *It'll be Turing Complete here*
+   *It'll be Turing Complete here\**
 - [ ] Functions
 - [ ] Labels (definitions and assignments)
 - [ ] Advanced expressions\
