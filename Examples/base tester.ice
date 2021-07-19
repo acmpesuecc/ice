@@ -1,15 +1,18 @@
 5var 5arg
+5var 5arg
 
 arg = 355
 
 5dest = var - arg
-
-3h 3i
 
 h = 9
 i = 246
 
 3sum = h+i
 
-print(sum)
+# comment support!
+
+print(sum) # even inline!
 print(dest)
+
+3h 3i

@@ -1,7 +1,7 @@
 # Parses basic expressions and assignments
 # And now can also parse declarations
 
-# Flags for var_encode()
+# Flags for varinfo()
 GET_CLAUSE = 0b100
 GET_INT = 0b010
 GET_REG = 0b001
@@ -15,48 +15,79 @@ if len(argv)<3: argv.append(name+'.asm')
 infile = open(argv[1])
 out = open(argv[2], 'w')
 def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
-# if len(argv)<4: argv.append(name+'.temp')
 
 import re
 class Patterns:
-	# var  = re.compile(r'((?i)[a-z_]\w*\b)')
-	wsep = re.compile(r'\b')
+	wsep  = re.compile(r'\b')
+	decl  = re.compile(r'((?:\[\d+\])*[0-6])([A-Za-z_]\w*)')
+	ident = re.compile(r'((\[\d+\])*[0-6])?([A-Za-z_]\w*)|\b\d+\b')
 
-	vsub = re.compile(r'%\d+\b')
-	rsub = re.compile(r'%\d+[a-d]\b')
+	stmt  = re.compile(r'(([\'"])(\\?.)*?\2|[^#])*')
+	sub   = re.compile(r'(?i)%(\d+)([a-z])?\b')
 
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
 	print('   ', line.strip())
+	raise RuntimeError(repr(msg)) # temporary, for debugging
+
 	print(msg)
 	quit(1)
 
-def isdecl(token): return token[:1].isdigit() and not token.isdigit()
+def split_shape(token):
+	match = Patterns.decl.match(token)
+	return match[1], match[2]
 
-def split_type(token): return token[:1], token[1:]
+def new_var(token):
+	shape, name = split_shape(token)
+	var = Variable(shape, name)
+	if name in variables:
+		old_shape = variables[name].shape
+		if old_shape == shape: return
+		err(f'ValueError: {var.name!r} is already defined '
+			f'with shape {old_shape!r}')
 
-def update_shapes(size, word):
-	if word in variables and variables[word] != size:
-		err(f'ValueError: {var!r} is already defined with a different shape')
-	variables[word] = Variable(size, word)
+	variables[name] = var
+	size = indexed_sizes[int(var.shape[-1])]
 
+	output(var.enc_name+': res'+size, '1')
 
-def var_encode(var, flags = GET_CLAUSE, reg = 'a'): # flags: clause, bytes, reg
+def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var not in variables: err(f'ValueError: {var!r} is not declared.')
-	shape = int(variables[var].shape)
+	var = variables[var]
+	size = int(var.shape[-1])
 	out = ()
-	if flags&GET_CLAUSE: out += (f'{size_list[shape]} [{var}]',)
-	if flags&GET_INT: out += (1<<max(0, shape-3),)
+	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
+	if flags&GET_INT: out += (1<<max(0, size-3),)
 	if flags&GET_REG:
-		reg_temp = reg_list[shape]
+		reg_temp = reg_list[size]
 		reg = reg_temp[0]+reg+reg_temp[1]
 		out += (reg,)
 
 	if len(out) == 1: return out[0]
 	return out
 
+def insert_snippet(fun, args = []): # dw this won't break
+	sfile.seek(0)
+	for line in sfile.readlines()[snippets[fun]:]:
+		if line in (';', ';\n'): break
+
+		offset = 0
+		for match in Patterns.sub.finditer(line):
+			start, end = match.span()
+			start += offset
+			end   += offset
+			arg = args[int(match[1])]
+			tail = match[2]
+
+			if tail in 'abcd': sub = varinfo(arg, flags = GET_REG, reg = tail)
+			elif not tail: sub = varinfo(arg)
+			else: continue
+
+			offset += len(sub)-len(match[0])
+			line = line[:start]+sub+line[end:]
+		output(line.strip())
+
 def fun_encode(subject, op):
-	# like \ in strings we'll use _ as the escape character for idents
 	op = op.replace('_', ' ')
 
 	if subject not in variables:
@@ -73,19 +104,23 @@ def fun_encode(subject, op):
 	label = label.replace('_', '__')
 	label = label.replace(' ', '_')
 
-	# print(label+op)
 	return label+op
 
-# store variable metadata (neater than using tuples)
 class Variable:
 	def __init__(self, shape, name):
 		self.shape = shape
 		self.name = name
-		self.labels = []
-		if len(shape) == 1: self.labels.append('_u')
+		self.enc_name = self.var_encode()
+		if len(shape) == 1: self.labels = ['_u']
+		else:               self.labels = ['_a']
 
 	def __repr__(self):
 		return f'Variable({self.shape+self.name})'
+
+	def var_encode(self):
+		enc_name = self.name.replace('_', '__')
+		return 'v_'+enc_name
+
 variables = {}	# formerly the `shapes` dict
 
 # byte if size <= 8, word if 16 ...
@@ -93,50 +128,38 @@ indexed_sizes = 'bbbbwdq'
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
 reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
 
-output(
-	'extern _printf',
-	'global _main',
+sfile = open('builtins.ice-snippet')
+snippets = {line[2:-1]: line_no for line_no, line in enumerate(sfile, 1)
+	if line.startswith('; ')}
+# starts at a line starting with '; ' (mind the space)
+# ends at a line with just ';' (refer builtin methods and functions part)
 
-	'\nsegment .data',
-	r'_p: db `%u\n`, 0',
+print('BUILTINS: ', *snippets)
 
-	'\nsegment .bss',
-sep = '\n')
+insert_snippet('_header')
 
+# Writing to bss segment
 
-# Writing to the Uninitialised Data Segment for Every Declaration line
-
+output('\nsegment .bss')
 for line_no, line in enumerate(infile, 1):
-	decls = []
-	tokens = Patterns.wsep.split(line)[1:]
+	decls = 0
+	tokens = Patterns.stmt.match(line)[0].split()
 
-	decl = False	# we don't know if it's a declaration line yet
 	for token in tokens:
 		if not token or token.isspace(): continue
 
-		if isdecl(token):
-			size, var = split_type(token)
-			update_shapes(size, var)
-			decls.append((size, var))
-			decl = True
+		if Patterns.decl.match(token):
+			new_var(token)
+			decls += 1
 		elif token.strip() == '=':
-			if len(decls) > 1:
+			if decls > 1:
 				err('SyntaxError: Assignment with multiple declarations.')
 			break
-		elif decl:
+		elif decls:
 			err('SyntaxError: Non-declaration token in declaration line.')
 		else: break	# not a declaration line
 
-	if decl:	# Output to data segment
-		for size, var in decls:
-			size = indexed_sizes[int(variables[var].shape)]
-
-			# reserves one size unit with that (asm) label
-			output(var+': res'+size, '1')
-
 print('VARIABLES:', *variables.values())
-
-
 
 # Generating Assembly Code for Every Line of Source Code
 
@@ -155,14 +178,6 @@ symbols = {
 	'>>': '__rshift__',
 }
 
-mfile = open('builtins.ice-snippet')
-macros = {line[2:-1]: line_no for line_no, line in enumerate(mfile)
-	if line.startswith('; ')}
-# starts at a line starting with '; ' (mind the space)
-# ends at a line with just ';' (refer builtin method part)
-
-print('BUILTINS: ', *macros)
-
 infile.seek(0)
 output('\nsegment .text')
 output('_main:')
@@ -171,20 +186,27 @@ for line_no, line in enumerate(infile, 1):
 	subject = ''
 	op = ''
 	args = []
+	line = Patterns.stmt.match(line)[0]
 	dest, _, exp = line.rpartition('=')
 	dest = dest.strip()
-	if isdecl(dest): dest = split_type(dest)[1]
+	exp  = exp.strip()
+
+	if not dest and Patterns.decl.match(exp): continue
+	if Patterns.decl.match(dest): dest = split_shape(dest)[1]
+
 	tokens = Patterns.wsep.split(exp)
 	for token in tokens:
 		if not token or token.isspace(): continue
 
-		if not isdecl(token): decl = False
-		else:
-			if decl: break
-			else: err('SyntaxError: Cannot declare within expressions.')
+		if Patterns.decl.match(token):
+			err('SyntaxError: Cannot declare within expressions.')
 
-		# expression lexing (might need cleaning up)
-		if not subject: subject = token
+		# expression lexing (still might need cleaning up)
+		if not subject:
+			D = Patterns.ident.match(token)
+			if not D: err('SyntaxError: Invalid expression.')
+			if D[1]: err('SyntaxError: Cannot declare within expressions')
+			subject = token
 		elif not op:
 			token = token.strip()
 			if token[0] == '(': op = '__call__'
@@ -200,63 +222,40 @@ for line_no, line in enumerate(infile, 1):
 			if subject: output(f'; no op {subject}')
 		elif not subject: err('SyntaxError: Expected an expression.')
 		elif subject.isdigit():
-			dclause = var_encode(dest)
-			output('\n; '+line.strip())
+			dclause = varinfo(dest)
+			output(f'\n;{line_no}:', line.strip())
 			output(f'mov {dclause}, {subject}')
 		else:
-			sclause, sreg = var_encode(subject, flags = GET_CLAUSE|GET_REG)
-			dclause, dreg = var_encode(dest, flags = GET_CLAUSE|GET_REG)
+			sclause, sreg = varinfo(subject, flags = GET_CLAUSE|GET_REG)
+			dclause, dreg = varinfo(dest, flags = GET_CLAUSE|GET_REG)
 			output(f'mov {sreg}, {sclause}')
 			output(f'mov {dclause}, {dreg}')
 		continue
 
-	output('\n; '+line.strip())
+	output(f'\n;{line_no}:', line.strip())
+
+	enc_op = fun_encode(subject, op)
 
 	# builtin functions and methods
-	enc_op = fun_encode(subject, op)
-	if enc_op in macros:
-		mfile.seek(0)
+	if enc_op in snippets:
+		insert_snippet(enc_op, args = [subject]+args)
 
-		for line in mfile.readlines()[macros[enc_op]+1:]:
-			if line in (';', ';\n'): break
-
-			# TODO: multiple subs per line
-			vsub = Patterns.vsub.search(line)
-			if vsub is not None:
-				start, end = vsub.span()
-				arg_n = int(vsub[0][1:])
-				clause = var_encode(([subject]+args)[arg_n])
-				line = line[:start]+clause+line[end:]
-
-			rsub = Patterns.rsub.search(line)
-			if rsub is not None:
-				start, end = rsub.span()
-				arg_n = int(rsub[0][1:-1])
-				reg = rsub[0][-1]
-				reg = var_encode(([subject]+args)[arg_n],
-					flags = GET_REG, reg = reg)
-				line = line[:start]+reg+line[end:]
-
-			output(line.strip())
-
-		if dest:
-			output(f'mov {var_encode(dest)}, {var_encode(dest, flags=GET_REG)}')
+		if dest: output(f'mov {varinfo(dest)}, {varinfo(dest, flags=GET_REG)}')
 		continue
 
 	# normal function calls
 	offset = 0
 	for arg in args:
-		arg_clause, size = var_encode(arg, flags = GET_CLAUSE|GET_INT)
+		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_INT)
 		output('push', arg_clause)
 		offset += size
 
 	if op != '__call__':
-		subject_clause, size = var_encode(subject, flags = GET_CLAUSE|GET_INT)
+		subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_INT)
 		output('push', subject_clause)
 		offset += size
 		output('call', enc_op)
 	else: output('call', subject)
 	output('add esp,', offset)
 
-	if dest:
-		output(f'mov {var_encode(dest)}, {var_encode(dest, flags=GET_REG)}')
+	if dest: output(f'mov {varinfo(dest)}, {varinfo(dest, flags=GET_REG)}')

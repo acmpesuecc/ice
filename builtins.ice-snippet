@@ -1,3 +1,11 @@
+; _header
+extern _printf
+global _main
+
+segment .data
+_p: db `%u\n`, 0
+;
+
 ; _u_dadd
 mov %0a, %0
 add %1a, %1
@@ -14,9 +22,10 @@ mul %1
 ;
 
 ; print
-mov eax, 0
+xor eax, eax
 xor %1a, %1
 push eax
 push _p
 call _printf
 add esp, 8
+;

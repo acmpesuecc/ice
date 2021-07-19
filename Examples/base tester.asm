@@ -5,46 +5,46 @@ segment .data
 _p: db `%u\n`, 0
 
 segment .bss
-var: resd 1
-arg: resd 1
-dest: resd 1
-h: resb 1
-i: resb 1
-sum: resb 1
+v_var: resd 1
+v_arg: resd 1
+v_dest: resd 1
+v_sum: resb 1
+v_h: resb 1
+v_i: resb 1
 
 segment .text
 _main:
 
-; arg = 355
-mov dword [arg], 355
+;4: arg = 355
+mov dword [v_arg], 355
 
-; 5dest = var - arg
-mov eax, dword [var]
-sub eax, dword [arg]
-mov dword [dest], eax
+;6: 5dest = var - arg
+mov eax, dword [v_var]
+sub eax, dword [v_arg]
+mov dword [v_dest], eax
 
-; h = 9
-mov byte [h], 9
+;8: h = 9
+mov byte [v_h], 9
 
-; i = 246
-mov byte [i], 246
+;9: i = 246
+mov byte [v_i], 246
 
-; 3sum = h+i
-mov  al, byte [h]
-add  al, byte [i]
-mov byte [sum],  al
+;11: 3sum = h+i
+mov  al, byte [v_h]
+add  al, byte [v_i]
+mov byte [v_sum],  al
 
-; print(sum)
-mov eax, 0
-xor  al, byte [sum]
+;13: print(sum)
+xor eax, eax
+xor  al, byte [v_sum]
 push eax
 push _p
 call _printf
 add esp, 8
 
-; print(dest)
-mov eax, 0
-xor eax, dword [dest]
+;14: print(dest)
+xor eax, eax
+xor eax, dword [v_dest]
 push eax
 push _p
 call _printf
