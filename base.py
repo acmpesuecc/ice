@@ -2,9 +2,10 @@
 # And now can also parse declarations
 
 # Flags for varinfo()
-GET_CLAUSE = 0b100
-GET_INT = 0b010
-GET_REG = 0b001
+GET_CLAUSE = 8
+GET_SIZE = 4
+GET_INT = 2
+GET_REG = 1
 
 from sys import argv
 # if len(argv) <2: print('Input file not specified'); quit(1)
@@ -19,8 +20,11 @@ def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 import re
 class Patterns:
 	wsep  = re.compile(r'\b')
-	decl  = re.compile(r'((?:\[\d+\])*[0-6])([A-Za-z_]\w*)')
-	ident = re.compile(r'((\[\d+\])*[0-6])?([A-Za-z_]\w*)|\b\d+\b')
+
+	shape = r'(?:\[\d+\])*[3-5]'
+	decl  = re.compile(rf'({shape})([A-Za-z_]\w*)')
+	ident = re.compile(rf'({shape})?([A-Za-z_]\w*)|\b\d+\b')
+	dest  = re.compile(rf'({shape})?([A-Za-z_]\w*)(?:\[([A-Za-z_]\w*)\])?')
 
 	stmt  = re.compile(r'(([\'"])(\\?.)*?\2|[^#])*')
 	sub   = re.compile(r'(?i)%(\d+)([a-z])?\b')
@@ -33,12 +37,9 @@ def err(msg):
 	print(msg)
 	quit(1)
 
-def split_shape(token):
-	match = Patterns.decl.match(token)
-	return match[1], match[2]
-
 def new_var(token):
-	shape, name = split_shape(token)
+	match = Patterns.decl.match(token)
+	shape, name = match[1], match[2]
 	var = Variable(shape, name)
 	if name in variables:
 		old_shape = variables[name].shape
@@ -46,10 +47,15 @@ def new_var(token):
 		err(f'ValueError: {var.name!r} is already defined '
 			f'with shape {old_shape!r}')
 
-	variables[name] = var
-	size = indexed_sizes[int(var.shape[-1])]
+	size = size_list[int(var.shape[-1])][0]
+	length = 1
+	# print(shape, shape[1:-2].split(']['), sep = ' -> ')
+	for i in shape[1:-2].split(']['):
+		if not i: continue
+		length *= int(i)
+	output(var.enc_name+': res'+size, length)
 
-	output(var.enc_name+': res'+size, '1')
+	variables[name] = var
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var not in variables: err(f'ValueError: {var!r} is not declared.')
@@ -57,6 +63,7 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	size = int(var.shape[-1])
 	out = ()
 	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
+	if flags&GET_SIZE: out += (f'{size_list[size]}',)
 	if flags&GET_INT: out += (1<<max(0, size-3),)
 	if flags&GET_REG:
 		reg_temp = reg_list[size]
@@ -66,7 +73,7 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if len(out) == 1: return out[0]
 	return out
 
-def insert_snippet(fun, args = []): # dw this won't break
+def insert_snippet(fun, args = ()):
 	sfile.seek(0)
 	for line in sfile.readlines()[snippets[fun]:]:
 		if line in (';', ';\n'): break
@@ -79,8 +86,11 @@ def insert_snippet(fun, args = []): # dw this won't break
 			arg = args[int(match[1])]
 			tail = match[2]
 
-			if tail in 'abcd': sub = varinfo(arg, flags = GET_REG, reg = tail)
-			elif not tail: sub = varinfo(arg)
+			if not tail: sub = varinfo(arg)
+			elif tail == 'r': sub = variables[arg].enc_name
+			elif tail == 's': sub = varinfo(arg, flags = GET_SIZE)
+			elif tail == 'n': sub = str(varinfo(arg, flags = GET_INT))
+			elif tail in 'abcd': sub = varinfo(arg, flags = GET_REG, reg = tail)
 			else: continue
 
 			offset += len(sub)-len(match[0])
@@ -106,6 +116,42 @@ def fun_encode(subject, op):
 
 	return label+op
 
+def assign(dest, imm = None):
+	match = Patterns.dest.match(dest)
+	var, index = match[2], match[3]
+	# print(dest, (var, index), sep = ' -> ')
+
+	if index:
+		if imm: output('mov eax,', imm)
+		call_function('__setitem__', var, [index])
+		return
+
+	if imm: output(f'mov {varinfo(var)}, {imm}')
+	else:
+		clause, reg = varinfo(var, flags = GET_CLAUSE|GET_REG)
+		output(f'mov {clause}, {reg}')
+
+def call_function(op, subject, args = ()):
+	enc_op = fun_encode(subject, op)
+
+	if enc_op in snippets:
+		insert_snippet(enc_op, args = [subject]+args)
+		return
+
+	offset = 0
+	for arg in args:
+		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_INT)
+		output('push', arg_clause)
+		offset += size
+
+	if op != '__call__':
+		subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_INT)
+		output('push', subject_clause)
+		offset += size
+		output('call', enc_op)
+	else: output('call', subject)
+	output('add esp,', offset)
+
 class Variable:
 	def __init__(self, shape, name):
 		self.shape = shape
@@ -124,7 +170,6 @@ class Variable:
 variables = {}	# formerly the `shapes` dict
 
 # byte if size <= 8, word if 16 ...
-indexed_sizes = 'bbbbwdq'
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
 reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
 
@@ -132,7 +177,7 @@ sfile = open('builtins.ice-snippet')
 snippets = {line[2:-1]: line_no for line_no, line in enumerate(sfile, 1)
 	if line.startswith('; ')}
 # starts at a line starting with '; ' (mind the space)
-# ends at a line with just ';' (refer builtin methods and functions part)
+# ends at a line with just ';' (refer `insert_snippet()`)
 
 print('BUILTINS: ', *snippets)
 
@@ -192,7 +237,6 @@ for line_no, line in enumerate(infile, 1):
 	exp  = exp.strip()
 
 	if not dest and Patterns.decl.match(exp): continue
-	if Patterns.decl.match(dest): dest = split_shape(dest)[1]
 
 	tokens = Patterns.wsep.split(exp)
 	for token in tokens:
@@ -209,53 +253,28 @@ for line_no, line in enumerate(infile, 1):
 			subject = token
 		elif not op:
 			token = token.strip()
-			if token[0] == '(': op = '__call__'
+			if   token[0] == '(': op = '__call__'
+			elif token[0] == '[': op = '__getitem__'
 			elif token == '.': op = False
 			elif op == False: op = token
 			elif token in symbols: op = symbols[token]
 			elif not token: err('SyntaxError: Expected an operation.')
 		elif token.isalnum(): args.append(token)
 
+	if op:
+		output(f'\n;{line_no}:', line.strip())
+		call_function(op, subject, args)
+		if dest: assign(dest)
+		continue
+
 	# just assignment or no op
-	if not op:
-		if not dest:
-			if subject: output(f'; no op {subject}')
-		elif not subject: err('SyntaxError: Expected an expression.')
-		elif subject.isdigit():
-			dclause = varinfo(dest)
-			output(f'\n;{line_no}:', line.strip())
-			output(f'mov {dclause}, {subject}')
-		else:
-			sclause, sreg = varinfo(subject, flags = GET_CLAUSE|GET_REG)
-			dclause, dreg = varinfo(dest, flags = GET_CLAUSE|GET_REG)
-			output(f'mov {sreg}, {sclause}')
-			output(f'mov {dclause}, {dreg}')
-		continue
-
-	output(f'\n;{line_no}:', line.strip())
-
-	enc_op = fun_encode(subject, op)
-
-	# builtin functions and methods
-	if enc_op in snippets:
-		insert_snippet(enc_op, args = [subject]+args)
-
-		if dest: output(f'mov {varinfo(dest)}, {varinfo(dest, flags=GET_REG)}')
-		continue
-
-	# normal function calls
-	offset = 0
-	for arg in args:
-		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_INT)
-		output('push', arg_clause)
-		offset += size
-
-	if op != '__call__':
-		subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_INT)
-		output('push', subject_clause)
-		offset += size
-		output('call', enc_op)
-	else: output('call', subject)
-	output('add esp,', offset)
-
-	if dest: output(f'mov {varinfo(dest)}, {varinfo(dest, flags=GET_REG)}')
+	if not dest:
+		if subject: output(f';{line_no}: no op {subject}')
+	elif not subject: err('SyntaxError: Expected an expression.')
+	elif subject.isdigit():
+		output(f'\n;{line_no}:', line.strip())
+		assign(dest, imm = subject)
+	else:
+		sclause, sreg = varinfo(subject, flags = GET_CLAUSE|GET_REG)
+		output(f'mov {sreg}, {sclause}')
+			assign(dest)

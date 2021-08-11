@@ -1,3 +1,11 @@
+;; %1a-d: for corresponding register of unit size
+;; %1r:   for raw name
+;; %1s:   for size ('byte', 'word' etc.)
+;; %1n:   for size as number of bytes
+;; just %1: short for %1s [%1r]
+;; the number after the % sign is the index of the argument
+;; %0 is the subject
+
 ; _header
 extern _printf
 global _main
@@ -19,6 +27,17 @@ sub %1a, %1
 ; _u_dmul
 mov %0a, %0
 mul %1
+;
+
+; _a_dgetitem
+mov %1a, %1
+mov %0a, %0s [eax * %0n + %0r]
+;
+
+; _a_dsetitem
+xor ecx, ecx
+mov %1c, %1
+mov %0s [ecx * %0n + %0r], %0a
 ;
 
 ; print

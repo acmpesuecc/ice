@@ -46,6 +46,6 @@ guavarrPointer.procedure(3, 6, 12)
 
 newVar = loneFunction(2, 0)
 
-print(str(newVarr.firstFunc(newVar)))
+print(newVarr.firstFunc(newVar))
 # Some sort of *args syntax can be implemented.
 # Not the same syntax of course, because `*` is used for pointers.

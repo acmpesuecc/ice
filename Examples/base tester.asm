@@ -34,7 +34,7 @@ mov  al, byte [v_h]
 add  al, byte [v_i]
 mov byte [v_sum],  al
 
-;13: print(sum)
+;15: print(sum)
 xor eax, eax
 xor  al, byte [v_sum]
 push eax
@@ -42,7 +42,7 @@ push _p
 call _printf
 add esp, 8
 
-;14: print(dest)
+;16: print(dest)
 xor eax, eax
 xor eax, dword [v_dest]
 push eax
