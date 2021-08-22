@@ -12,6 +12,7 @@ global _main
 
 segment .data
 _p: db `%u\n`, 0
+_c: dw 0
 ;
 
 ; _u_dadd
@@ -47,4 +48,12 @@ push eax
 push _p
 call _printf
 add esp, 8
+;
+
+; printchr
+mov al, byte [%1r]
+mov byte [_c], al
+push _c
+call _printf
+add esp, 4
 ;
