@@ -1,16 +1,17 @@
 extern _printf
 global _main
 
-segment .data
-_p: db `%u\n`, 0
-
 segment .bss
-v_var: resd 1
 v_arg: resd 1
+v_var: resd 1
 v_dest: resd 1
 v_sum: resb 1
-v_h: resb 1
 v_i: resb 1
+v_h: resb 1
+
+segment .data
+_p: db `%u\n`, 0
+_c: dw 0
 
 segment .text
 _main:

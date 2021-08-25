@@ -1,15 +1,15 @@
-# Parses basic expressions and assignments
-# And now can also parse declarations
-
 # Flags for varinfo()
 GET_CLAUSE = 8
 GET_SIZE = 4
 GET_INT = 2
 GET_REG = 1
 
+# init types
+ARRAY, *_ = range(8)
+
 from sys import argv
 # if len(argv) <2: print('Input file not specified'); quit(1)
-if len(argv)<2: argv.append('Examples/base tester.ice')
+if len(argv)<2: argv.append('Examples/array tester.ice')
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
 
@@ -37,15 +37,22 @@ def err(msg):
 	print(msg)
 	quit(1)
 
-def new_var(token):
+def new_var(token, init = None):
 	match = Patterns.decl.match(token)
 	shape, name = match[1], match[2]
 	var = Variable(shape, name)
 	if name in variables:
-		old_shape = variables[name].shape
-		if old_shape == shape: return
-		err(f'ValueError: {var.name!r} is already defined '
-			f'with shape {old_shape!r}')
+		var = variables[name]
+		if var.shape != shape: err(f'ValueError: {var.name!r}'
+			f'is already declared with shape {var.shape!r}')
+		if init:
+			if var.init:err(f'ValueError: {var.name!r} is already initialised.')
+			var.init = init
+		return
+
+	variables[name] = var
+
+	if init: var.init = init; return
 
 	size = size_list[int(var.shape[-1])][0]
 	length = 1
@@ -54,8 +61,6 @@ def new_var(token):
 		if not i: continue
 		length *= int(i)
 	output(var.enc_name+': res'+size, length)
-
-	variables[name] = var
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var not in variables: err(f'ValueError: {var!r} is not declared.')
@@ -156,6 +161,7 @@ class Variable:
 	def __init__(self, shape, name):
 		self.shape = shape
 		self.name = name
+		self.init = None
 		self.enc_name = self.var_encode()
 		if len(shape) == 1: self.labels = ['_u']
 		else:               self.labels = ['_a']
@@ -167,7 +173,7 @@ class Variable:
 		enc_name = self.name.replace('_', '__')
 		return 'v_'+enc_name
 
-variables = {}	# formerly the `shapes` dict
+variables = {}
 
 # byte if size <= 8, word if 16 ...
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
@@ -187,26 +193,60 @@ insert_snippet('_header')
 
 output('\nsegment .bss')
 for line_no, line in enumerate(infile, 1):
+	init = None
+	init_type = None
+	var = None
 	decls = 0
 	tokens = Patterns.stmt.match(line)[0].split()
 
 	for token in tokens:
-		if not token or token.isspace(): continue
+		if not token: print(line.strip()); continue
 
 		if Patterns.decl.match(token):
-			new_var(token)
+			if init is not None:
+				err('SyntaxError: Declarations not allowed in expressions.')
+			if decls: new_var(token)
+			else: var = token
 			decls += 1
-		elif token.strip() == '=':
+
+		elif init is not None:
+			if init_type is None:
+				if token.startswith('['): init_type = ARRAY; token = token[1:]
+				else: break
+
+			for subtoken in Patterns.wsep.split(token):
+				subtoken = subtoken.strip()
+				if init_type == ARRAY:
+					if subtoken.isdigit(): init.append(int(subtoken))
+					elif subtoken not in ',]': err('SyntaxError: Invalid token'
+						f' {subtoken!r} in array initialisation.')
+
+		elif token == '=':
 			if decls > 1:
 				err('SyntaxError: Assignment with multiple declarations.')
-			break
+			elif not decls: err('SyntaxError: Assignment without destination.')
+			init = []
+
 		elif decls:
 			err('SyntaxError: Non-declaration token in declaration line.')
+
 		else: break	# not a declaration line
+
+	if var is not None: new_var(var, init = init)
+
+# Writing to the data segment
+
+output()
+insert_snippet('_data')
+for var in variables.values():
+	if not var.init: continue
+	size = size_list[int(var.shape[-1])][0]
+	output(var.enc_name+': d'+size, end = ' ')
+	output(*var.init, sep = ', ')
 
 print('VARIABLES:', *variables.values())
 
-# Generating Assembly Code for Every Line of Source Code
+# Writing to the text segment
 
 # (some of) python's dunder names
 symbols = {
@@ -238,21 +278,22 @@ for line_no, line in enumerate(infile, 1):
 
 	if not dest and Patterns.decl.match(exp): continue
 
+	# expression lexing (still might need cleaning up)
 	tokens = Patterns.wsep.split(exp)
 	for token in tokens:
-		if not token or token.isspace(): continue
-
+		token = token.strip()
+		if not token: continue
 		if Patterns.decl.match(token):
 			err('SyntaxError: Cannot declare within expressions.')
 
-		# expression lexing (still might need cleaning up)
 		if not subject:
+			if token.startswith('['): dest = False; break
 			D = Patterns.ident.match(token)
-			if not D: err('SyntaxError: Invalid expression.')
+			if not D:err(f'SyntaxError: Invalid token {token!r} in expression.')
 			if D[1]: err('SyntaxError: Cannot declare within expressions')
 			subject = token
+
 		elif not op:
-			token = token.strip()
 			if   token[0] == '(': op = '__call__'
 			elif token[0] == '[': op = '__getitem__'
 			elif token == '.': op = False
@@ -277,4 +318,4 @@ for line_no, line in enumerate(infile, 1):
 	else:
 		sclause, sreg = varinfo(subject, flags = GET_CLAUSE|GET_REG)
 		output(f'mov {sreg}, {sclause}')
-			assign(dest)
+		assign(dest)

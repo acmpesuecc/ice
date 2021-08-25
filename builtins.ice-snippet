@@ -9,7 +9,9 @@
 ; _header
 extern _printf
 global _main
+;
 
+; _data
 segment .data
 _p: db `%u\n`, 0
 _c: dw 0

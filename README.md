@@ -11,7 +11,7 @@ Refer [this test file](Examples/Test%20file.ice) for some syntax examples.
 ## Roadmap
 The goal is to be able to compile from source to binary after the addition of each feature.\
 These are the features in order:
-- [ ] Basic expressions and assignments\
+- [x] Basic expressions and assignments\
     *`var`, `function(args)`, `var.method(args)`, `var op var`*
     - [x] Parse expressions
     - [x] Parse declarations
@@ -20,7 +20,7 @@ These are the features in order:
 - [ ] Arrays
     - [x] Item access
     - [x] Item assignment
-    - [ ] Array literals
+    - [x] Array literals
     - [ ] String literals
 - [ ] Pointers
 - [ ] Control flow statements\
