@@ -14,7 +14,8 @@ global _main
 ; _data
 segment .data
 _p: db `%u\n`, 0
-_c: dw 0
+_c: db 0, 0
+_ln: db 0, 10, 0
 ;
 
 ; _u_dadd
@@ -43,7 +44,7 @@ mov %1c, %1
 mov %0s [ecx * %0n + %0r], %0a
 ;
 
-; print
+; printnum
 xor eax, eax
 xor %1a, %1
 push eax
@@ -52,10 +53,30 @@ call _printf
 add esp, 8
 ;
 
-; printchr
-mov al, byte [%1r]
-mov byte [_c], al
+; print
+mov bl, byte [(%1l*%1n) + (%1r-1)]
+mov byte [(%1l*%1n) + (%1r-1)], 0
+push %1r
+call _printf
+add esp, 4
+mov byte [(%1l*%1n) + (%1r-1)], bl
+
+mov byte [_c], bl
 push _c
+call _printf
+add esp, 4
+;
+
+; println
+mov bl, byte [(%1l*%1n) + (%1r-1)]
+mov byte [(%1l*%1n) + (%1r-1)], 0
+push %1r
+call _printf
+add esp, 4
+mov byte [(%1l*%1n) + (%1r-1)], bl
+
+mov byte [_ln], bl
+push _ln
 call _printf
 add esp, 4
 ;

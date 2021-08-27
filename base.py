@@ -1,15 +1,13 @@
 # Flags for varinfo()
-GET_CLAUSE = 8
-GET_SIZE = 4
-GET_INT = 2
-GET_REG = 1
+GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
 
 # init types
-ARRAY, *_ = range(8)
+[END, ARRAY, STRING1, STRING2,
+STRING_ESCAPE, STRING_HEX_ESCAPE,*_] = (1<<i for i in range(8))
 
 from sys import argv
 # if len(argv) <2: print('Input file not specified'); quit(1)
-if len(argv)<2: argv.append('Examples/array tester.ice')
+if len(argv)<2: argv.append('Examples/hello.ice')
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
 
@@ -20,6 +18,8 @@ def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 import re
 class Patterns:
 	wsep  = re.compile(r'\b')
+	hex   = re.compile(r'[\da-fA-F]')
+	space = re.compile(r'\s+')
 
 	shape = r'(?:\[\d+\])*[3-5]'
 	decl  = re.compile(rf'({shape})([A-Za-z_]\w*)')
@@ -55,11 +55,7 @@ def new_var(token, init = None):
 	if init: var.init = init; return
 
 	size = size_list[int(var.shape[-1])][0]
-	length = 1
-	# print(shape, shape[1:-2].split(']['), sep = ' -> ')
-	for i in shape[1:-2].split(']['):
-		if not i: continue
-		length *= int(i)
+	length = get_length(shape)
 	output(var.enc_name+': res'+size, length)
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
@@ -68,6 +64,7 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	size = int(var.shape[-1])
 	out = ()
 	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
+	if flags&GET_LENGTH: out += (get_length(var.shape),)
 	if flags&GET_SIZE: out += (f'{size_list[size]}',)
 	if flags&GET_INT: out += (1<<max(0, size-3),)
 	if flags&GET_REG:
@@ -95,6 +92,7 @@ def insert_snippet(fun, args = ()):
 			elif tail == 'r': sub = variables[arg].enc_name
 			elif tail == 's': sub = varinfo(arg, flags = GET_SIZE)
 			elif tail == 'n': sub = str(varinfo(arg, flags = GET_INT))
+			elif tail == 'l': sub = str(varinfo(arg, flags = GET_LENGTH))
 			elif tail in 'abcd': sub = varinfo(arg, flags = GET_REG, reg = tail)
 			else: continue
 
@@ -157,6 +155,13 @@ def call_function(op, subject, args = ()):
 	else: output('call', subject)
 	output('add esp,', offset)
 
+def get_length(shape, expected = None):
+	length = 1
+	for i in shape[1:-2].split(']['):
+		if not i: continue
+		length *= int(i)
+	return length
+
 class Variable:
 	def __init__(self, shape, name):
 		self.shape = shape
@@ -174,6 +179,25 @@ class Variable:
 		return 'v_'+enc_name
 
 variables = {}
+
+escape_sequences = {
+	'a':'\a','n':'\n','f':'\f','t':'\t','v':'\v','r':'\r',
+	"'":'\'','"':'"','\\':'\\'}
+
+# a few dunder methods
+symbols = {
+	'|' : '__or__',
+	'&' : '__and__',
+	'^' : '__xor__',
+	'+' : '__add__',
+	'-' : '__sub__',
+	'*' : '__mul__',
+	'/' : '__truediv__',
+	'//': '__floordiv__',
+	'**': '__pow__',
+	'<<': '__lshift__',
+	'>>': '__rshift__',
+}
 
 # byte if size <= 8, word if 16 ...
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
@@ -194,12 +218,16 @@ insert_snippet('_header')
 output('\nsegment .bss')
 for line_no, line in enumerate(infile, 1):
 	init = None
-	init_type = None
+	init_type = 0
 	var = None
 	decls = 0
-	tokens = Patterns.stmt.match(line)[0].split()
 
-	for token in tokens:
+	stmt = Patterns.stmt.match(line)[0]
+	spaces = Patterns.space.findall(stmt.lstrip())
+	tokens = stmt.split()
+	if len(spaces) != len(tokens): spaces.append('')
+
+	for space, token in zip(spaces, tokens):
 		if not token: print(line.strip()); continue
 
 		if Patterns.decl.match(token):
@@ -210,16 +238,49 @@ for line_no, line in enumerate(infile, 1):
 			decls += 1
 
 		elif init is not None:
-			if init_type is None:
-				if token.startswith('['): init_type = ARRAY; token = token[1:]
+			if not init_type:
+				if   token[0] == '[': init_type = ARRAY
+				elif token[0] == "'": init_type = STRING1
+				elif token[0] == '"': init_type = STRING2
 				else: break
+				token = token[1:]
 
-			for subtoken in Patterns.wsep.split(token):
-				subtoken = subtoken.strip()
-				if init_type == ARRAY:
+
+			if init_type == ARRAY:
+				for subtoken in Patterns.wsep.split(token):
+					subtoken = subtoken.strip()
+					if not subtoken: continue
 					if subtoken.isdigit(): init.append(int(subtoken))
-					elif subtoken not in ',]': err('SyntaxError: Invalid token'
+					elif subtoken == ']': init_type = END
+					elif subtoken != ',': err('SyntaxError: Invalid token'
 						f' {subtoken!r} in array initialisation.')
+
+			elif init_type & (STRING1|STRING2):
+				for c in token+space:
+					if init_type&STRING_ESCAPE:
+						init_type ^= STRING_ESCAPE
+						if c == 'x':
+							init_type |= STRING_HEX_ESCAPE; init.append(0)
+						elif c not in escape_sequences:
+							err(f'SyntaxError: Invalid escape character {c!r}.')
+						else: init.append(ord(escape_sequences[c]))
+					elif init_type&STRING_HEX_ESCAPE:
+						if not Patterns.hex.match(c):
+							err('SyntaxError: Expected hexadecimal character.')
+
+						if not init[-1]: init[-1] |= int(c, 16)<<4 | 15
+						else:
+							init[-1] = ~15&init[-1] | int(c, 16)
+							init_type ^= STRING_HEX_ESCAPE
+
+					elif c == '\\': init_type |= STRING_ESCAPE
+					elif init_type&STRING1 and c == "'": init_type = END; break
+					elif init_type&STRING2 and c == '"': init_type = END; break
+					else: init.append(ord(c))
+					# print(c, f'{init_type:06b}', init)
+
+			elif init_type == END:
+				err('SyntaxError: Token found after sequence initialisation.')
 
 		elif token == '=':
 			if decls > 1:
@@ -232,36 +293,37 @@ for line_no, line in enumerate(infile, 1):
 
 		else: break	# not a declaration line
 
-	if var is not None: new_var(var, init = init)
+	if init_type & (STRING1|STRING2):
+		err('SyntaxError: EOL while parsing string.')
+	elif init_type & ARRAY:
+		err('SyntaxError: Multi-line arrays are not yet supported.')
+
+	if var is not None:
+		new_var(var, init = init)
+		if not init: continue
+		vl, il = get_length(Patterns.decl.match(var)[1]), len(init)
+		if il != vl:
+			err(f'ValueError: Expected {vl} elements. Got {il} instead.')
 
 # Writing to the data segment
 
-output()
-insert_snippet('_data')
-for var in variables.values():
-	if not var.init: continue
-	size = size_list[int(var.shape[-1])][0]
-	output(var.enc_name+': d'+size, end = ' ')
-	output(*var.init, sep = ', ')
-
 print('VARIABLES:', *variables.values())
 
-# Writing to the text segment
+output()
+insert_snippet('_data')
+print('\nINITS:')
+inits = False
+for var in variables.values():
+	if not var.init: continue
+	inits = True
+	size = size_list[int(var.shape[-1])][0]
 
-# (some of) python's dunder names
-symbols = {
-	'|' : '__or__',
-	'&' : '__and__',
-	'^' : '__xor__',
-	'+' : '__add__',
-	'-' : '__sub__',
-	'*' : '__mul__',
-	'/' : '__truediv__',
-	'//': '__floordiv__',
-	'**': '__pow__',
-	'<<': '__lshift__',
-	'>>': '__rshift__',
-}
+	print(var.name, '=', var.init)
+	output(var.enc_name+': d'+size, end = ' ')
+	output(*var.init, sep = ', ')
+if not inits: print(None)
+
+# Writing to the text segment
 
 infile.seek(0)
 output('\nsegment .text')
@@ -277,6 +339,7 @@ for line_no, line in enumerate(infile, 1):
 	exp  = exp.strip()
 
 	if not dest and Patterns.decl.match(exp): continue
+	isdecl = bool(Patterns.decl.match(dest))
 
 	# expression lexing (still might need cleaning up)
 	tokens = Patterns.wsep.split(exp)
@@ -287,7 +350,9 @@ for line_no, line in enumerate(infile, 1):
 			err('SyntaxError: Cannot declare within expressions.')
 
 		if not subject:
-			if token.startswith('['): dest = False; break
+			if token[0] in '["\'':
+				if isdecl: dest = False; break
+				else: err('SyntaxError: Initialisation without declaration.')
 			D = Patterns.ident.match(token)
 			if not D:err(f'SyntaxError: Invalid token {token!r} in expression.')
 			if D[1]: err('SyntaxError: Cannot declare within expressions')

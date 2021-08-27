@@ -11,7 +11,8 @@ v_h: resb 1
 
 segment .data
 _p: db `%u\n`, 0
-_c: dw 0
+_c: db 0, 0
+_ln: db 0, 10, 0
 
 segment .text
 _main:
@@ -35,7 +36,7 @@ mov  al, byte [v_h]
 add  al, byte [v_i]
 mov byte [v_sum],  al
 
-;15: print(sum)
+;15: printnum(sum)
 xor eax, eax
 xor  al, byte [v_sum]
 push eax
@@ -43,7 +44,7 @@ push _p
 call _printf
 add esp, 8
 
-;16: print(dest)
+;16: printnum(dest)
 xor eax, eax
 xor eax, dword [v_dest]
 push eax

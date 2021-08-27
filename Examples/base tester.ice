@@ -12,7 +12,7 @@ i = 246
 
 # comment support!
 
-print(sum) # even inline!
-print(dest)
+printnum(sum) # even inline!
+printnum(dest)
 
 3h 3i
