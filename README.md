@@ -21,7 +21,7 @@ These are the features in order:
     - [x] Item access
     - [x] Item assignment
     - [x] Array literals
-    - [ ] String literals
+    - [x] String literals
 - [ ] Pointers
 - [ ] Control flow statements\
    *It'll be Turing Complete here*
