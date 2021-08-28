@@ -1,5 +1,5 @@
 {
-	"cmd": ["py", "base.py", "$file"],
+	"cmd": ["py", "compiler.py", "$file"],
 	"file_regex": "File \"(...*?)\", line ([0-9]+)",
 	"selector": "source.ice"
 }

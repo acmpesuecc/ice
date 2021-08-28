@@ -1,2 +1,2 @@
-[13]3hello = 'Hello,\x20World!'
 println(hello)
+[]3hello = 'Hello, World!'

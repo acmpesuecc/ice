@@ -20,8 +20,9 @@ class Patterns:
 	wsep  = re.compile(r'\b')
 	hex   = re.compile(r'[\da-fA-F]')
 	space = re.compile(r'\s+')
+	empty = re.compile(r'\[\][3-5]')
 
-	shape = r'(?:\[\d+\])*[3-5]'
+	shape = r'(?:(?:\[\d+\])*|\[\])[3-5]'
 	decl  = re.compile(rf'({shape})([A-Za-z_]\w*)')
 	ident = re.compile(rf'({shape})?([A-Za-z_]\w*)|\b\d+\b')
 	dest  = re.compile(rf'({shape})?([A-Za-z_]\w*)(?:\[([A-Za-z_]\w*)\])?')
@@ -32,7 +33,7 @@ class Patterns:
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
 	print('   ', line.strip())
-	raise RuntimeError(repr(msg)) # temporary, for debugging
+	raise RuntimeError(msg) # temporary, for debugging
 
 	print(msg)
 	quit(1)
@@ -40,23 +41,36 @@ def err(msg):
 def new_var(token, init = None):
 	match = Patterns.decl.match(token)
 	shape, name = match[1], match[2]
-	var = Variable(shape, name)
-	if name in variables:
+
+	if Patterns.empty.fullmatch(shape):
+		if not init: err('ValueError: Implicit length requires initialisation.')
+		shape = shape[0]+str(init_length)+shape[1:]
+
+	if name in variables: # check prev
 		var = variables[name]
 		if var.shape != shape: err(f'ValueError: {var.name!r}'
 			f'is already declared with shape {var.shape!r}')
 		if init:
-			if var.init:err(f'ValueError: {var.name!r} is already initialised.')
+			if var.init and var.init != init:
+				err(f'ValueError: Initialisation mismatch for {var.name!r}.'
+					f'\n  Expected {var.init}'
+					f'\n  Got      {init}')
 			var.init = init
 		return
 
 	variables[name] = var
+	shape_len = get_length(shape)
 
-	if init: var.init = init; return
-
-	size = size_list[int(var.shape[-1])][0]
-	length = get_length(shape)
-	output(var.enc_name+': res'+size, length)
+	var = Variable(shape, name)
+	if init:
+		init_length = len(init)
+		if init_length != shape_len:
+			err(f'ValueError: Shape expects {shape_len} elements. '
+				f'Got {init_length} instead.')
+		var.init = init
+	else:
+		size = size_list[int(shape[-1])][0]
+		output(var.enc_name+': res'+size, shape_len)
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var not in variables: err(f'ValueError: {var!r} is not declared.')
@@ -298,12 +312,7 @@ for line_no, line in enumerate(infile, 1):
 	elif init_type & ARRAY:
 		err('SyntaxError: Multi-line arrays are not yet supported.')
 
-	if var is not None:
-		new_var(var, init = init)
-		if not init: continue
-		vl, il = get_length(Patterns.decl.match(var)[1]), len(init)
-		if il != vl:
-			err(f'ValueError: Expected {vl} elements. Got {il} instead.')
+	if var is not None: new_var(var, init = init)
 
 # Writing to the data segment
 

@@ -17,7 +17,7 @@ These are the features in order:
     - [x] Parse declarations
     - [x] Builtin functions
     - [x] Integer literals
-- [ ] Arrays
+- [x] Arrays
     - [x] Item access
     - [x] Item assignment
     - [x] Array literals
