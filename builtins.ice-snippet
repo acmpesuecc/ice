@@ -2,6 +2,7 @@
 ;; %1r:   for raw name
 ;; %1s:   for size ('byte', 'word' etc.)
 ;; %1n:   for size as number of bytes
+;; %1l:   for length of the array (1 for non-array variables)
 ;; just %1: short for %1s [%1r]
 ;; the number after the % sign is the index of the argument
 ;; %0 is the subject

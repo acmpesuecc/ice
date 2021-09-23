@@ -1,9 +1,8 @@
 # Flags for varinfo()
 GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
 
-# init types
-[END, ARRAY, STRING1, STRING2,
-STRING_ESCAPE, STRING_HEX_ESCAPE,*_] = (1<<i for i in range(8))
+# String States
+CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
 from sys import argv
 # if len(argv) <2: print('Input file not specified'); quit(1)
@@ -19,6 +18,7 @@ import re
 class Patterns:
 	wsep  = re.compile(r'\b')
 	hex   = re.compile(r'[\da-fA-F]')
+	equal = re.compile(r'(?<!=)=(?!=)')
 	space = re.compile(r'\s+')
 	empty = re.compile(r'\[\][3-5]')
 
@@ -33,7 +33,7 @@ class Patterns:
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
 	print('   ', line.strip())
-	raise RuntimeError(msg) # temporary, for debugging
+	if debug: raise RuntimeError(repr(msg)) # temporary, for debugging
 
 	print(msg)
 	quit(1)
@@ -44,6 +44,7 @@ def new_var(token, init = None):
 
 	if Patterns.empty.fullmatch(shape):
 		if not init: err('ValueError: Implicit length requires initialisation.')
+		init_length = len(init)
 		shape = shape[0]+str(init_length)+shape[1:]
 
 	if name in variables: # check prev
@@ -58,10 +59,10 @@ def new_var(token, init = None):
 			var.init = init
 		return
 
+	var = Variable(shape, name)
+
 	variables[name] = var
 	shape_len = get_length(shape)
-
-	var = Variable(shape, name)
 	if init:
 		init_length = len(init)
 		if init_length != shape_len:
@@ -122,7 +123,7 @@ def fun_encode(subject, op):
 		return op.replace(' ', '__')
 
 	if op.startswith('  ') and op.endswith('  ') and len(op) >= 4:
-		op = '_d'+op.strip()
+		op = '_d'+op[2:-2]
 	else: op = '_m'+op
 	op = op.replace(' ', '__')
 
@@ -190,7 +191,7 @@ class Variable:
 
 	def var_encode(self):
 		enc_name = self.name.replace('_', '__')
-		return 'v_'+enc_name
+		return '$'+enc_name
 
 variables = {}
 
@@ -231,88 +232,66 @@ insert_snippet('_header')
 
 output('\nsegment .bss')
 for line_no, line in enumerate(infile, 1):
-	init = None
-	init_type = 0
-	var = None
-	decls = 0
+	stmt = Patterns.stmt.match(line)[0].strip()
+	lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
+	lhs = lhs.strip()
+	decls = lhs.split()
 
-	stmt = Patterns.stmt.match(line)[0]
-	spaces = Patterns.space.findall(stmt.lstrip())
-	tokens = stmt.split()
-	if len(spaces) != len(tokens): spaces.append('')
+	if not Patterns.decl.match(lhs): continue
 
-	for space, token in zip(spaces, tokens):
-		if not token: print(line.strip()); continue
+	if not rhs:
+		for decl in decls:
+			decl = decl.strip()
+			if Patterns.decl.match(decl): new_var(decl)
+			else: err(f'SyntaxError: Expected a declaration token.')
+		continue
 
-		if Patterns.decl.match(token):
-			if init is not None:
-				err('SyntaxError: Declarations not allowed in expressions.')
-			if decls: new_var(token)
-			else: var = token
-			decls += 1
+	if not lhs: err('SyntaxError: Assignment without destination.')
+	if len(decls) > 1:
+		err('SyntaxError: Assignment with multiple declarations')
+	var = decls[0]
+	init = []
 
-		elif init is not None:
-			if not init_type:
-				if   token[0] == '[': init_type = ARRAY
-				elif token[0] == "'": init_type = STRING1
-				elif token[0] == '"': init_type = STRING2
-				else: break
-				token = token[1:]
+	rhs = rhs[0].strip()
+	end = False
+	if rhs[0] == '[':
+		for token in Patterns.wsep.split(rhs[1:]):
+			token = token.strip()
+			if not token: continue
+			if end:
+				err('SyntaxError: Token found after array initialisation.')
+			if token.isdigit(): init.append(int(token))
+			elif token == ']': end = True
+			elif token != ',': err('SyntaxError: Invalid token'
+				f' {token!r} in array initialisation.')
+		if not end: err('SyntaxError: Multi-line arrays are not yet supported.')
 
+	elif rhs[0] in '"\'':
+		s = rhs[0]
+		str_state = CHAR
+		for c in rhs[1:]:
+			if str_state == ESCAPE:
+				str_state = CHAR
+				if c == 'x': str_state = HEX_ESCAPE; init.append(0)
+				elif c not in escape_sequences:
+					err(f'SyntaxError: Invalid escape character {c!r}.')
+				else: init.append(ord(escape_sequences[c]))
+			elif str_state == HEX_ESCAPE:
+				if not Patterns.hex.match(c):
+					err('SyntaxError: Expected hexadecimal character.')
 
-			if init_type == ARRAY:
-				for subtoken in Patterns.wsep.split(token):
-					subtoken = subtoken.strip()
-					if not subtoken: continue
-					if subtoken.isdigit(): init.append(int(subtoken))
-					elif subtoken == ']': init_type = END
-					elif subtoken != ',': err('SyntaxError: Invalid token'
-						f' {subtoken!r} in array initialisation.')
+				if not init[-1]: init[-1] |= int(c, 16)<<4 | 15
+				else:
+					init[-1] = ~15&init[-1] | int(c, 16)
+					str_state = 0
 
-			elif init_type & (STRING1|STRING2):
-				for c in token+space:
-					if init_type&STRING_ESCAPE:
-						init_type ^= STRING_ESCAPE
-						if c == 'x':
-							init_type |= STRING_HEX_ESCAPE; init.append(0)
-						elif c not in escape_sequences:
-							err(f'SyntaxError: Invalid escape character {c!r}.')
-						else: init.append(ord(escape_sequences[c]))
-					elif init_type&STRING_HEX_ESCAPE:
-						if not Patterns.hex.match(c):
-							err('SyntaxError: Expected hexadecimal character.')
+			elif c == '\\': str_state = ESCAPE
+			elif c == s: break
+			else: init.append(ord(c))
+			# print(c, f'{init_type:06b}', init)
+		else: err('SyntaxError: EOL while parsing string.')
 
-						if not init[-1]: init[-1] |= int(c, 16)<<4 | 15
-						else:
-							init[-1] = ~15&init[-1] | int(c, 16)
-							init_type ^= STRING_HEX_ESCAPE
-
-					elif c == '\\': init_type |= STRING_ESCAPE
-					elif init_type&STRING1 and c == "'": init_type = END; break
-					elif init_type&STRING2 and c == '"': init_type = END; break
-					else: init.append(ord(c))
-					# print(c, f'{init_type:06b}', init)
-
-			elif init_type == END:
-				err('SyntaxError: Token found after sequence initialisation.')
-
-		elif token == '=':
-			if decls > 1:
-				err('SyntaxError: Assignment with multiple declarations.')
-			elif not decls: err('SyntaxError: Assignment without destination.')
-			init = []
-
-		elif decls:
-			err('SyntaxError: Non-declaration token in declaration line.')
-
-		else: break	# not a declaration line
-
-	if init_type & (STRING1|STRING2):
-		err('SyntaxError: EOL while parsing string.')
-	elif init_type & ARRAY:
-		err('SyntaxError: Multi-line arrays are not yet supported.')
-
-	if var is not None: new_var(var, init = init)
+	new_var(var, init = init)
 
 # Writing to the data segment
 
