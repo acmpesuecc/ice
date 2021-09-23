@@ -1,1 +1,2 @@
 *.ice-snippet linguist-language=Assembly
+*.ice linguist-language=Python
