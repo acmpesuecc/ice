@@ -4,3 +4,4 @@ __pycache__
 archive
 *.exe
 *.o
+Tests/Test*

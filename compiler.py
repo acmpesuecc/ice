@@ -1,3 +1,5 @@
+# Use assembly's local labels for methods of ice's labels
+
 # Flags for varinfo()
 GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
 
@@ -5,8 +7,11 @@ GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
 from sys import argv
-# if len(argv) <2: print('Input file not specified'); quit(1)
-if len(argv)<2: argv.append('Examples/hello.ice')
+debug = False
+if '-d' in argv: debug = True; argv.remove('-d')
+if len(argv) <2:
+	if debug: argv.append('Examples\\hello.ice')
+	else: print('Input file not specified'); quit(1)
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
 
@@ -172,6 +177,7 @@ def call_function(op, subject, args = ()):
 
 def get_length(shape, expected = None):
 	length = 1
+	# add support for ^ symbol in shape
 	for i in shape[1:-2].split(']['):
 		if not i: continue
 		length *= int(i)
@@ -179,10 +185,12 @@ def get_length(shape, expected = None):
 
 class Variable:
 	def __init__(self, shape, name):
+		# reduce multidimensional arrays to one dimension
 		self.shape = shape
 		self.name = name
 		self.init = None
 		self.enc_name = self.var_encode()
+		# add tests for more default labels: u, v, au, av
 		if len(shape) == 1: self.labels = ['_u']
 		else:               self.labels = ['_a']
 
@@ -224,7 +232,7 @@ snippets = {line[2:-1]: line_no for line_no, line in enumerate(sfile, 1)
 # starts at a line starting with '; ' (mind the space)
 # ends at a line with just ';' (refer `insert_snippet()`)
 
-print('BUILTINS: ', *snippets)
+if debug: print('BUILTINS: ', *snippets)
 
 insert_snippet('_header')
 
@@ -295,21 +303,21 @@ for line_no, line in enumerate(infile, 1):
 
 # Writing to the data segment
 
-print('VARIABLES:', *variables.values())
+if debug: print('VARIABLES:', *variables.values())
 
 output()
 insert_snippet('_data')
-print('\nINITS:')
+if debug: print('\nINITS:')
 inits = False
 for var in variables.values():
 	if not var.init: continue
 	inits = True
 	size = size_list[int(var.shape[-1])][0]
 
-	print(var.name, '=', var.init)
+	if debug: print(var.name, '=', var.init)
 	output(var.enc_name+': d'+size, end = ' ')
 	output(*var.init, sep = ', ')
-if not inits: print(None)
+if debug and not inits: print(None)
 
 # Writing to the text segment
 
