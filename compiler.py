@@ -1,7 +1,7 @@
 # Use assembly's local labels for methods of ice's labels
 
 # Flags for varinfo()
-GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
+USE_UNITSIZE, GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
 
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
@@ -27,7 +27,7 @@ class Patterns:
 	space = re.compile(r'\s+')
 	empty = re.compile(r'\[\][3-5]')
 
-	shape = r'(?:(?:\[\d+\])*|\[\])[3-5]'
+	shape = r'\*?(?:(?:\[\d+\])*|\[\])[3-5]'
 	decl  = re.compile(rf'({shape})([A-Za-z_]\w*)')
 	ident = re.compile(rf'({shape})?([A-Za-z_]\w*)|\b\d+\b')
 	dest  = re.compile(rf'({shape})?([A-Za-z_]\w*)(?:\[([A-Za-z_]\w*)\])?')
@@ -75,13 +75,13 @@ def new_var(token, init = None):
 				f'Got {init_length} instead.')
 		var.init = init
 	else:
-		size = size_list[int(shape[-1])][0]
+		size = varinfo(name, GET_SIZE)[0]
 		output(var.enc_name+': res'+size, shape_len)
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var not in variables: err(f'ValueError: {var!r} is not declared.')
 	var = variables[var]
-	size = int(var.shape[-1])
+	size = int(var.shape[-1]) if var.shape[0] != '*' or flags&USE_UNITSIZE else 5
 	out = ()
 	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
 	if flags&GET_LENGTH: out += (get_length(var.shape),)
@@ -149,6 +149,17 @@ def assign(dest, imm = None):
 		call_function('__setitem__', var, [index])
 		return
 
+	if variables[var].shape[0] == '*':
+		if imm:
+			clause = varinfo(var, GET_CLAUSE)
+			size, int = varinfo(var, GET_SIZE|GET_INT|USE_UNITSIZE)
+			output(f'push {int}') # pass in argument to malloc
+			output('call _malloc') # returns address to eax
+			output(f'mov {clause}, eax') # point to that address
+			output(f'mov {size} [eax], {imm}') # set that address to imm
+		else: err('SyntaxError: Variable assignment to pointers not yet supported')
+		return
+
 	if imm: output(f'mov {varinfo(var)}, {imm}')
 	else:
 		clause, reg = varinfo(var, flags = GET_CLAUSE|GET_REG)
@@ -176,6 +187,7 @@ def call_function(op, subject, args = ()):
 	output('add esp,', offset)
 
 def get_length(shape, expected = None):
+	if shape[0] == '*': return 1
 	length = 1
 	# add support for ^ symbol in shape
 	for i in shape[1:-2].split(']['):

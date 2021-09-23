@@ -9,6 +9,7 @@
 
 ; _header
 extern _printf
+extern _malloc
 global _main
 ;
 
