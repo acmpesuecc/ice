@@ -26,15 +26,34 @@ class Patterns:
 	hex   = re.compile(r'[\da-fA-F]')
 	equal = re.compile(r'(?<!=)=(?!=)')
 	space = re.compile(r'\s+')
-	empty = re.compile(r'\[\][3-5]')
+	empty = re.compile(r'\[\][3-6]')
 
-	shape = r'\*?(?:(?:\[\d+\])*|\[\])[3-5]'
-	decl  = re.compile(rf'({shape})([A-Za-z_]\w*)')
-	ident = re.compile(rf'({shape})?([A-Za-z_]\w*)|\b\d+\b')
-	dest  = re.compile(rf'({shape})?([A-Za-z_]\w*)(?:\[([A-Za-z_]\w*)\])?')
+	shape = r'(?:(?:\[\d+\])*|\[\]|\*)'
+	unit  = r'[3-6]|[A-Za-z_]\w*' # add tuple support
+	label = rf'{shape}{unit}'
+	token = re.compile(rf'@({label})|\d+|[a-zA-Z_]\w*|(\S)')
+	decl  = re.compile(rf'@({label}\s+|{shape}[3-6])([A-Za-z_]\w*)')
+	dest  = re.compile(rf'(@{label}\s+|{shape}[3-6])?([A-Za-z_]\w*)'
+			r'(?:\[([A-Za-z_]\w*)\])?')
 
 	stmt  = re.compile(r'(([\'"])(\\?.)*?\2|[^#])*')
 	sub   = re.compile(r'(?i)%(\d+)([a-z])?\b')
+
+class Variable:
+	def __init__(self, label, name):
+		self.name = name
+		self.init = None
+		self.enc_name = self.var_encode()
+		self.size = label_size(label)
+		self.labels = [label]
+
+	def __repr__(self):
+		return f'{type(self).__name__}(@{self.labels[-1]} {self.name}, '\
+			f'size = {self.size})'
+
+	def var_encode(self):
+		enc_name = self.name.replace('_', '__')
+		return '$'+enc_name
 
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
@@ -46,17 +65,19 @@ def err(msg):
 
 def new_var(token, init = None):
 	match = Patterns.decl.match(token)
-	shape, name = match[1], match[2]
+	label, name = match[1].strip(), match[2]
 
-	if Patterns.empty.fullmatch(shape):
-		if not init: err('ValueError: Implicit length requires initialisation.')
+	if Patterns.empty.fullmatch(label):
+		if init is None:
+			err('ValueError: Implicit length requires initialisation.')
 		init_length = len(init)
-		shape = shape[0]+str(init_length)+shape[1:]
+		label = label[0]+str(init_length)+label[1:]
 
 	if name in variables: # check prev
 		var = variables[name]
-		if var.shape != shape: err(f'ValueError: {var.name!r}'
-			f'is already declared with shape {var.shape!r}')
+		size = label_size(label)
+		if var.size != size: err(f'TypeError: {var.name!r}'
+			f'uses {var.size} bytes, but {label!r} needs {size} bytes.')
 		if init:
 			if var.init and var.init != init:
 				err(f'ValueError: Initialisation mismatch for {var.name!r}.'
@@ -65,7 +86,7 @@ def new_var(token, init = None):
 			var.init = init
 		return
 
-	var = Variable(shape, name)
+	var = Variable(label, name)
 
 	variables[name] = var
 	shape_len = get_length(shape)
@@ -85,16 +106,15 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	# size, int and reg for pointers will already be known, so it isn't needed
 	# clause of a pointer has to be with a dword, so no need extra flag
 	# no, but it doesn't work with the builtins so yes extra flag
-	size = int(var.shape[-1]) if flags&USE_UNITSIZE or '*' not in var.shape[0] else 5
+	label = var.labels[-1]
+	# add support for size from label names
+	size = int(label[-1]) if '*' not in label or flags&USE_UNITSIZE else 5
 	out = ()
 	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
-	if flags&GET_LENGTH: out += (get_length(var.shape),)
+	# if flags&GET_LENGTH: out += (get_length(var.shape),)
 	if flags&GET_SIZE: out += (f'{size_list[size]}',)
-	if flags&GET_NBYTES: out += (1<<max(0, size-3),)
-	if flags&GET_REG:
-		reg_temp = reg_list[size]
-		reg = reg_temp[0]+reg+reg_temp[1]
-		out += (reg,)
+	if flags&GET_NBYTES: out += (var.size,)
+	if flags&GET_REG: a, b = reg_list[size]; out += (a+reg+b,)
 
 	if len(out) == 1: return out[0]
 	return out
@@ -116,7 +136,7 @@ def insert_snippet(fun, args = (), encode = True):
 			elif not tail: sub = varinfo(arg)
 			elif tail == 'r': sub = variables[arg].enc_name
 			elif tail == 's': sub = varinfo(arg, flags = GET_SIZE)
-			elif tail == 'n': sub = str(varinfo(arg, flags = GET_INT))
+			elif tail == 'n': sub = str(varinfo(arg, flags = GET_NBYTES))
 			elif tail == 'l': sub = str(varinfo(arg, flags = GET_LENGTH))
 			elif tail in 'abcd': sub = varinfo(arg, flags = GET_REG, reg = tail)
 			else: continue
@@ -186,32 +206,15 @@ def call_function(op, subject, args = ()):
 	else: output('call', subject)
 	output('add esp,', offset)
 
-def get_length(shape, expected = None):
-	if shape[0] == '*': return 1
+def get_length(label, expected = None):
+	# if label[0] == '*': return 1
 	length = 1
-	# add support for ^ symbol in shape
-	for i in shape[1:-2].split(']['):
+	# add support for ^ symbol in label
+	# add support for varr
+	for i in label[1:-2].split(']['):
 		if not i: continue
 		length *= int(i)
 	return length
-
-class Variable:
-	def __init__(self, shape, name):
-		# reduce multidimensional arrays to one dimension
-		self.shape = shape
-		self.name = name
-		self.init = None
-		self.enc_name = self.var_encode()
-		# add tests for more default labels: u, v, au, av
-		if len(shape) == 1: self.labels = ['_u']
-		else:               self.labels = ['_a']
-
-	def __repr__(self):
-		return f'Variable({self.shape+self.name})'
-
-	def var_encode(self):
-		enc_name = self.name.replace('_', '__')
-		return '$'+enc_name
 
 variables = {}
 
