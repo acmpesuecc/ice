@@ -1,7 +1,8 @@
 # Use assembly's local labels for methods of ice's labels
 
 # Flags for varinfo()
-USE_UNITSIZE, GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_INT, GET_REG, *_= (1<<i for i in range(8))
+[USE_UNITSIZE, GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_NBYTES, GET_REG,
+	*_] = (1<<i for i in range(8))
 
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
@@ -81,12 +82,15 @@ def new_var(token, init = None):
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var not in variables: err(f'ValueError: {var!r} is not declared.')
 	var = variables[var]
-	size = int(var.shape[-1]) if var.shape[0] != '*' or flags&USE_UNITSIZE else 5
+	# size, int and reg for pointers will already be known, so it isn't needed
+	# clause of a pointer has to be with a dword, so no need extra flag
+	# no, but it doesn't work with the builtins so yes extra flag
+	size = int(var.shape[-1]) if flags&USE_UNITSIZE or '*' not in var.shape[0] else 5
 	out = ()
 	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
 	if flags&GET_LENGTH: out += (get_length(var.shape),)
 	if flags&GET_SIZE: out += (f'{size_list[size]}',)
-	if flags&GET_INT: out += (1<<max(0, size-3),)
+	if flags&GET_NBYTES: out += (1<<max(0, size-3),)
 	if flags&GET_REG:
 		reg_temp = reg_list[size]
 		reg = reg_temp[0]+reg+reg_temp[1]
@@ -95,7 +99,7 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if len(out) == 1: return out[0]
 	return out
 
-def insert_snippet(fun, args = ()):
+def insert_snippet(fun, args = (), encode = True):
 	sfile.seek(0)
 	for line in sfile.readlines()[snippets[fun]:]:
 		if line in (';', ';\n'): break
@@ -108,7 +112,8 @@ def insert_snippet(fun, args = ()):
 			arg = args[int(match[1])]
 			tail = match[2]
 
-			if not tail: sub = varinfo(arg)
+			if not encode: sub = arg
+			elif not tail: sub = varinfo(arg)
 			elif tail == 'r': sub = variables[arg].enc_name
 			elif tail == 's': sub = varinfo(arg, flags = GET_SIZE)
 			elif tail == 'n': sub = str(varinfo(arg, flags = GET_INT))
@@ -150,14 +155,9 @@ def assign(dest, imm = None):
 		return
 
 	if variables[var].shape[0] == '*':
-		if imm:
-			clause = varinfo(var, GET_CLAUSE)
-			size, int = varinfo(var, GET_SIZE|GET_INT|USE_UNITSIZE)
-			output(f'push {int}') # pass in argument to malloc
-			output('call _malloc') # returns address to eax
-			output(f'mov {clause}, eax') # point to that address
-			output(f'mov {size} [eax], {imm}') # set that address to imm
-		else: err('SyntaxError: Variable assignment to pointers not yet supported')
+		if not imm: output('mov ebx, eax'); src = 'ebx'
+		else: src = imm
+		insert_snippet('_ptralloc', (var, src), encode = False)
 		return
 
 	if imm: output(f'mov {varinfo(var)}, {imm}')
@@ -174,12 +174,12 @@ def call_function(op, subject, args = ()):
 
 	offset = 0
 	for arg in args:
-		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_INT)
+		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_NBYTES)
 		output('push', arg_clause)
 		offset += size
 
 	if op != '__call__':
-		subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_INT)
+		subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_NBYTES)
 		output('push', subject_clause)
 		offset += size
 		output('call', enc_op)
@@ -347,6 +347,7 @@ for line_no, line in enumerate(infile, 1):
 	exp  = exp.strip()
 
 	if not dest and Patterns.decl.match(exp): continue
+	# if debug: print(f'{line_no}:', line.strip())
 	isdecl = bool(Patterns.decl.match(dest))
 
 	# expression lexing (still might need cleaning up)

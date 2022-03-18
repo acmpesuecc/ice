@@ -20,6 +20,13 @@ _c: db 0, 0
 _ln: db 0, 10, 0
 ;
 
+; _ptralloc
+push %0n
+call _malloc
+mov %0, eax
+mov %0s [eax], %1
+;
+
 ; _u_dadd
 mov %0a, %0
 add %1a, %1
@@ -81,4 +88,9 @@ mov byte [_ln], bl
 push _ln
 call _printf
 add esp, 4
+;
+
+; deref
+mov eax, %1
+mov %1a, %1s [eax]
 ;
