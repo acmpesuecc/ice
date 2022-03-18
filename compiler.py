@@ -1,4 +1,4 @@
-# Use assembly's local labels for methods of ice's labels
+# TODO: Remove varinfo(). Make methods under the Variable class.
 
 # Flags for varinfo()
 [USE_UNITSIZE, GET_CLAUSE, GET_LENGTH, GET_SIZE, GET_NBYTES, GET_REG,
