@@ -17,7 +17,7 @@ Ice is a compiled language and tries to be everything like python, unless types/
 Haven't cleaned this part yet, so you'll have to download the repo files. You'll also need [nasm](https://www.nasm.us/pub/nasm/snapshots/latest/) and [gcc](https://www.mingw-w64.org/downloads/).
 
 
-### Arch Linux
+### Getting nasm and gcc on Arch Linux
 _Yeah, I use arch btw._
 ```bash
 $ sudo pacman -S nasm
