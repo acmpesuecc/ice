@@ -1,37 +1,42 @@
 # Ice
 
-Ice is a compiled language with pythonic code blocks and some unique features.
+Most compiled languages are statically typed because the compiler needs to know its size at beforehand. Ice takes this literally, and variables are statically typed only upto their sizes. We can assign types to a variable if it has the right size.\
+These are called _labels_ in ice.
 
-[The wiki](../../wiki) lists all details.
+```bash
+@str msg = 'Hello, World!' # @str is a label of size 64 bits, since it's a 64-bit pointer.
+print(msg) # -> Hello, World!
 
-Refer [this test file](Examples/Test%20file.ice) for some syntax examples.
+@bytes msg # We change the type of the variable here. Now it acts as a pointer to an array.
+print(msg) # -> [72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33]
+```
 
-[Contributions are welcome!](../../discussions/9)
-
-## Roadmap
-The goal is to be able to compile from source to binary after the addition of each feature.\
-These are the features in order:
-- [x] Basic expressions and assignments\
-    *`var`, `function(args)`, `var.method(args)`, `var op var`*
-    - [x] Parse expressions
-    - [x] Parse declarations
-    - [x] Builtin functions
-    - [x] Integer literals
-- [x] Arrays
-    - [x] Item access
-    - [x] Item assignment
-    - [x] Array literals
-    - [x] String literals
-- [ ] Pointers
-- [ ] Control flow statements\
-   *It'll be Turing Complete here*
-- [ ] Functions
-- [ ] Labels (definitions and assignments)
-- [ ] Advanced expressions\
-    *Here we’ll have more complex expressions with operator precedence and all*
-- [ ] Advanced assignments\
-    *Basically unpacking*
-- [ ] Structs
+Ice is a compiled language and tries to be everything like python, unless types/labels are involved.
 
 ## Installation
-This project isn't an [MVP](https://en.wikipedia.org/wiki/Minimum_viable_product) yet, so none of that.
+Haven't cleaned this part yet, so you'll have to download the repo files. You'll also need [nasm](https://www.nasm.us/pub/nasm/snapshots/latest/) and [gcc](https://www.mingw-w64.org/downloads/).
+
+
+### Arch Linux
+_Yeah, I use arch btw._
+```bash
+$ sudo pacman -S nasm
+$ sudo pacman -S gcc # if it isn't updated
+```
+
+## Usage
+It isn't too simple yet. There are a couple of the steps.
+
+**Build on Windows**
+```batch
+> python3 <path_to_compiler>/compile.py <ice_file_name>.ice <assembly_file_name>.asm
+> nasm -fwin64 <assembly_file_name>.asm -o <object_file_name>.o
+> gcc -no-pie <object_file_name>.o -o <executable_file_name>.exe
+```
+
+**Build on Linux (and perhaps macOS)**
+```bash
+$ python3 <path_to_compiler>/compile.py <ice_file_name>.ice <assembly_file_name>.asm
+$ nasm -fwin64 <assembly_file_name>.asm -o <object_file_name>.o
+$ gcc -no-pie <object_file_name>.o -o <binary_file_name>
+```
