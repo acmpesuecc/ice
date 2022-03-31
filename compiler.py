@@ -48,12 +48,26 @@ class Variable:
 		self.labels = [label]
 
 	def __repr__(self):
-		return f'{type(self).__name__}(@{self.labels[-1]} {self.name}, '\
+		return f'{type(self).__name__}(@{self.get_label()} {self.name}, '\
 			f'size = {self.size})'
 
 	def var_encode(self):
 		enc_name = self.name.replace('_', '__')
 		return '$'+enc_name
+
+	def get_label(self):
+		return self.labels[-1]
+
+class Register(Variable):
+	def var_encode(self):
+		# assuming label[0] for register gives unit
+		unit = self.get_label()[0]
+		if unit == '*': unit = '6' # 64-bit
+		a, b = reg_list[int(unit)]
+		return a+self.name+b
+
+class Literal(Variable):
+	def var_encode(self): return self.name
 
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
