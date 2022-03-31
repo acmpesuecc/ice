@@ -134,7 +134,7 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	return out
 
 def insert_snippet(fun, args = (), encode = True):
-	sfile.seek(snippets[fun])
+	sfile.seek(snippets[fun][0])
 	for line in sfile:
 		if line in (';', ';\n'): break
 
@@ -177,6 +177,10 @@ def fun_encode(subject, op):
 	label = label.replace(' ', '_')
 
 	return label+op
+
+def get_call_label(enc_op):
+	if enc_op in snippets: return snippets[enc_op][1]
+	return functions[enc_op][0] # (ret_label, *arg_sizes)
 
 def assign(dest, imm = None):
 	match = Patterns.dest.match(dest)
@@ -275,8 +279,8 @@ tell = 0
 for line_no, line in enumerate(sfile, 1):
 	tell += len(line)
 	if not line.startswith('; '): continue
-	name = line[2:].strip()
-	snippets[name] = tell
+	name, ret, *args = line[2:].split()
+	snippets[name] = (name, ret, args)
 # starts at a line starting with '; ' (mind the space)
 # ends at a line with just ';' (refer `insert_snippet()`)
 
