@@ -120,8 +120,8 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	return out
 
 def insert_snippet(fun, args = (), encode = True):
-	sfile.seek(0)
-	for line in sfile.readlines()[snippets[fun]:]:
+	sfile.seek(snippets[fun])
+	for line in sfile:
 		if line in (';', ';\n'): break
 
 		offset = 0
@@ -242,8 +242,14 @@ size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
 reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
 
 sfile = open('builtins.ice-snippet')
-snippets = {line[2:-1]: line_no for line_no, line in enumerate(sfile, 1)
-	if line.startswith('; ')}
+
+snippets = {}
+tell = 0
+for line_no, line in enumerate(sfile, 1):
+	tell += len(line)
+	if not line.startswith('; '): continue
+	name = line[2:].strip()
+	snippets[name] = tell
 # starts at a line starting with '; ' (mind the space)
 # ends at a line with just ';' (refer `insert_snippet()`)
 
