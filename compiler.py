@@ -216,6 +216,19 @@ def get_length(label, expected = None):
 		length *= int(i)
 	return length
 
+def label_size(label):
+	fac = 1
+	num = ''
+	for i, d in enumerate(label):
+		# add support for varrs
+		if d == ']': fac *= int(num); num = ''
+		elif d.digit(): num += d
+		elif d == '*': return 4*fac
+		elif d.isalpha(): return labels[label[i:]].size*fac
+	if num: return (1<<(max(0, int(num)-3)))
+	# control comes here only if the label format isn't right
+	err('SyntaxError: Invalid label syntax.')
+
 variables = {}
 
 escape_sequences = {
