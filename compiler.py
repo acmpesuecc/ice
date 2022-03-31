@@ -120,7 +120,7 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	# size, int and reg for pointers will already be known, so it isn't needed
 	# clause of a pointer has to be with a dword, so no need extra flag
 	# no, but it doesn't work with the builtins so yes extra flag
-	label = var.labels[-1]
+	label = var.get_label()
 	# add support for size from label names
 	size = int(label[-1]) if '*' not in label or flags&USE_UNITSIZE else 5
 	out = ()
@@ -159,24 +159,25 @@ def insert_snippet(fun, args = (), encode = True):
 			line = line[:start]+sub+line[end:]
 		output(line.strip())
 
-def fun_encode(subject, op):
-	op = op.replace('_', ' ')
-
-	if subject not in variables:
-		if op == '  call  ': return subject.replace('_', '__')
-		return op.replace(' ', '__')
-
-	if op.startswith('  ') and op.endswith('  ') and len(op) >= 4:
-		op = '_d'+op[2:-2]
+def fun_encode(label, op):
+	# check if label has that method?
+	op = op.replace('_', '__')
+	if len(op.lstrip('_'))+4 <= len(op) >= len(op.rstrip('_'))+4:
+		op = '_d'+op[4:-4]
 	else: op = '_m'+op
-	op = op.replace(' ', '__')
 
-	label = variables[subject].labels[-1]
-	if label[0] == '_' and label[1] != '_': label = label.replace('_', ' ', 1)
-	label = label.replace('_', '__')
-	label = label.replace(' ', '_')
+	# # _a and _u need to be preserved
+	# if label[0] == '_' and label[1] != '_': label = label.replace('_', ' ', 1)
+	enc_op = label.translate({
+		# ord(' '): '_',
+		ord('_'): '__',
+		ord('*'): '_s',
+		ord('['): '_a',
+		ord(']'): '_',
+	})
 
-	return label+op
+	enc_op = label+op
+	return enc_op
 
 def get_call_label(enc_op):
 	if enc_op in snippets: return snippets[enc_op][1]
@@ -189,7 +190,8 @@ def assign(dest, imm = None):
 
 	if index:
 		if imm: output('mov eax,', imm)
-		call_function('__setitem__', var, [index])
+		fun = fun_encode(var.get_label(), '__setitem__')
+		call_function(fun, (var, index))
 		return
 
 	if variables[var].shape[0] == '*':
@@ -203,32 +205,45 @@ def assign(dest, imm = None):
 		clause, reg = varinfo(var, flags = GET_CLAUSE|GET_REG)
 		output(f'mov {clause}, {reg}')
 
-def call_function(op, subject, args = ()):
-	enc_op = fun_encode(subject, op)
+# def call_function(subject, op, args = (), label = None):
+	# if label is not None: enc_op = fun_encode(label, op); args = (subject,)+args
+	# elif subject in variables:
+	# 	label = variables[subject].get_label()
+	# 	enc_op = fun_encode(label, op)
+	# elif op == '__call__': enc_op = subject.replace('_', '__')
+	# else: err(f'NameError: Variable {subject!r} not declared.')
 
+# Would take subject to check if it is a call to a function
+# and not to a variable with a __call__ method.
+# Should that check be here?
+def call_function(enc_op, args = ()):
 	if enc_op in snippets:
-		insert_snippet(enc_op, args = [subject]+args)
+		insert_snippet(enc_op, args = args)
 		return
 
+	if enc_op not in functions: err('Function not defined.')
+
+	# Make this compatible with 64-bit
 	offset = 0
 	for arg in args:
 		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_NBYTES)
 		output('push', arg_clause)
 		offset += size
 
-	if op != '__call__':
-		subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_NBYTES)
-		output('push', subject_clause)
-		offset += size
-		output('call', enc_op)
-	else: output('call', subject)
+	# if op != '__call__':
+	# 	subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_NBYTES)
+	# 	output('push', subject_clause)
+	# 	offset += size
+	# 	output('call', enc_op)
+	# else: output('call', subject)
+
+	output('call', enc_op)
 	output('add esp,', offset)
 
-def get_length(label, expected = None):
+def get_length(label):
 	# if label[0] == '*': return 1
 	length = 1
-	# add support for ^ symbol in label
-	# add support for varr
+	# add support for dynamic arrays
 	for i in label[1:-2].split(']['):
 		if not i: continue
 		length *= int(i)
@@ -248,6 +263,8 @@ def label_size(label):
 	err('SyntaxError: Invalid label syntax.')
 
 variables = {}
+functions = {}
+labels    = {}
 
 escape_sequences = {
 	'a':'\a','n':'\n','f':'\f','t':'\t','v':'\v','r':'\r',
