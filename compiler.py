@@ -271,7 +271,15 @@ escape_sequences = {
 	"'":'\'','"':'"','\\':'\\'}
 
 # a few dunder methods
-symbols = {
+unary = {
+	'+': '__pos__',
+	'-': '__neg__',
+	'~': '__invert__',
+	'*': '__deref__',
+	'&': '__ref__',
+}
+
+binary = {
 	'|' : '__or__',
 	'&' : '__and__',
 	'^' : '__xor__',
@@ -279,10 +287,10 @@ symbols = {
 	'-' : '__sub__',
 	'*' : '__mul__',
 	'/' : '__truediv__',
-	'//': '__floordiv__',
-	'**': '__pow__',
-	'<<': '__lshift__',
-	'>>': '__rshift__',
+	# '//': '__floordiv__',
+	# '**': '__pow__',
+	# '<<': '__lshift__',
+	# '>>': '__rshift__',
 }
 
 # byte if size <= 8, word if 16 ...
@@ -394,10 +402,6 @@ infile.seek(0)
 output('\nsegment .text')
 output('_main:')
 for line_no, line in enumerate(infile, 1):
-	decl = True
-	subject = ''
-	op = ''
-	args = []
 	line = Patterns.stmt.match(line)[0]
 	dest, _, exp = line.rpartition('=')
 	dest = dest.strip()
@@ -406,40 +410,73 @@ for line_no, line in enumerate(infile, 1):
 	if not dest and Patterns.decl.match(exp): continue
 	# if debug: print(f'{line_no}:', line.strip())
 	isdecl = bool(Patterns.decl.match(dest))
+	# decl = True
+	uni_chain = []
+	args = []
+	label = None
+	bin_op = None
+	# close_bracket = 
 
-	# expression lexing (still might need cleaning up)
-	tokens = Patterns.wsep.split(exp)
-	for token in tokens:
-		token = token.strip()
-		if not token: continue
-		if Patterns.decl.match(token):
-			err('SyntaxError: Cannot declare within expressions.')
+	# output(f'\n;{line_no}:', line.strip())
 
-		if not subject:
-			if token[0] in '["\'':
-				if isdecl: dest = False; break
-				else: err('SyntaxError: Initialisation without declaration.')
-			D = Patterns.ident.match(token)
-			if not D:err(f'SyntaxError: Invalid token {token!r} in expression.')
-			if D[1]: err('SyntaxError: Cannot declare within expressions')
-			subject = token
+	# expression lexing (mostly cleaned up)
+	for token in Patterns.token.finditer(exp):
+		if bin_op is True: # expecting a binary operator
+			if token[0] not in binary:
+				err('SyntaxError: Expected binary operator.')
+			bin_op = fun_encode(label, binary[token[0]])
+			continue
 
-		elif not op:
-			if   token[0] == '(': op = '__call__'
-			elif token[0] == '[': op = '__getitem__'
-			elif token == '.': op = False
-			elif op == False: op = token
-			elif token in symbols: op = symbols[token]
-			elif not token: err('SyntaxError: Expected an operation.')
-		elif token.isalnum(): args.append(token)
+		if token[2]: # processing unary
+			if token[2] in '["\'':
+				if bin_op or uni_chain: err('SyntaxError: '
+					'Operations not yet supported on sequence literals.')
+				if not isdecl: err('SyntaxError: Sequence literals '
+					'not yet supported outside declaration.')
+				dest = None; break # sequence literals initialise right now
+			if token[2] not in unary:
+				err('SyntaxError: Invalid unary operator.')
+			uni_chain.append(token[2])
+			continue
 
-	if op:
-		output(f'\n;{line_no}:', line.strip())
-		call_function(op, subject, args)
-		if dest: assign(dest)
-		continue
+		if token[1]: # label cast
+			# same process if got a variable
+			label = token[1]
+			for i, uni in enumerate(reversed(uni_chain), 1):
+				if uni.isidentifier(): break
+				uni_chain[-i] = fun_encode(label, unary[uni])
+				label = get_call_label(uni_chain[-i])
+			else: # end of uni_chain
+				if expected != get_length(label):
+					err('TypeError: Size mismatch for binary operator.')
+				# call functions
+
+			continue
+
+		# The token is an identifier
+
+		# bin_op here is either a name or None, never True
+		if bin_op: output('mov rcx, rax')
+
+		# varinfo needs to support number literals
+		if not uni_chain: output(f'mov rax, {varinfo(token[0])}')
+		else: label = call_function(
+			token[0], uni_chain[0][0], label=uni_chain[0][1:-1])
+		for op, label in uni_chain[1:]: call_function('$a', op, label = label)
+
+		if bin_op: label = call_function(bin_op, ('$a', '$c'), label = label)
+
+		bin_op = True
+		uni_chain = []
+
+		# TODO:
+		# 	if   token[0] == '(': op = '__call__'
+		# 	elif token[0] == '[': op = '__getitem__'
+		# 	elif token == '.': op = False
+		# 	elif op == False: op = token
 
 	# just assignment or no op
+	# for no op (and for asignment also maybe?) check `label is None`
 	if not dest:
 		if subject: output(f';{line_no}: no op {subject}')
 	elif not subject: err('SyntaxError: Expected an expression.')
