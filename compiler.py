@@ -427,9 +427,9 @@ for line_no, line in enumerate(infile, 1):
 	# decl = True
 	uni_chain = []
 	args = []
-	label = None
-	bin_op = None
-	# close_bracket = 
+	cast = None
+	b_label = None
+	bin_op  = None  # remembered for use after unary operations
 
 	# output(f'\n;{line_no}:', line.strip())
 
@@ -438,10 +438,10 @@ for line_no, line in enumerate(infile, 1):
 		if bin_op is True: # expecting a binary operator
 			if token[0] not in binary:
 				err('SyntaxError: Expected binary operator.')
-			bin_op = fun_encode(label, binary[token[0]])
+			bin_op = fun_encode(b_label, binary[token[0]])
 			continue
 
-		if token[2]: # processing unary
+		if token[2]: # Expecting unary. Got some symbol.
 			if token[2] in '["\'':
 				if bin_op or uni_chain: err('SyntaxError: '
 					'Operations not yet supported on sequence literals.')
@@ -451,35 +451,49 @@ for line_no, line in enumerate(infile, 1):
 			if token[2] not in unary:
 				err('SyntaxError: Invalid unary operator.')
 			uni_chain.append(token[2])
+			cast = None
 			continue
 
-		if token[1]: # label cast
-			# same process if got a variable
-			label = token[1]
-			for i, uni in enumerate(reversed(uni_chain), 1):
-				if uni.isidentifier(): break
-				uni_chain[-i] = fun_encode(label, unary[uni])
-				label = get_call_label(uni_chain[-i])
-			else: # end of uni_chain
-				if expected != get_length(label):
-					err('TypeError: Size mismatch for binary operator.')
-				# call functions
+		if token[1]: cast = label = token[0]
+		elif token[0].isdigit(): v_label = label = cast or '6'
+		else: v_label = label = cast or variables[token[0]].get_label()
+		assert cast or not uni_chain[-1].isidentifier()
+		assert not cast or uni_chain[-1].isidentifier()
+		for i, uni in enumerate(reversed(uni_chain), 1):
+			if uni.isidentifier(): break
+			uni_chain[-i] = fun_encode(label, unary[uni])
+			label = get_call_label(uni_chain[-i])
 
-			continue
-
-		# The token is an identifier
+		if token[1]: continue # label cast. Don't call the functions yet.
 
 		# bin_op here is either a name or None, never True
 		if bin_op: output('mov rcx, rax')
 
-		# varinfo needs to support number literals
-		if not uni_chain: output(f'mov rax, {varinfo(token[0])}')
-		else: label = call_function(
-			token[0], uni_chain[0][0], label=uni_chain[0][1:-1])
-		for op, label in uni_chain[1:]: call_function('$a', op, label = label)
+		var = token[0]
+		if uni_chain:
+			call_function(uni_chain[-1], (var,))
+			size = label_size(get_call_label(uni_chain[-1]))
+		elif not var.isdigit(): size = 8; output(f'mov rax, {var}')
+		else:
+			clause, size = varinfo(var, flags = GET_CLAUSE|GET_NBYTES)
+			output(f'mov rax, {clause}')
+		for uni in reversed(uni_chain[:-1]):
+			if uni.isidentifier(): enc_op = uni
+			else: enc_op = fun_encode(label, unary[uni])
+			call_function(enc_op, ('$a',), reg_sizes = (size,))
+			label = get_call_label(enc_op)
+			size = label_size(label)
+		# if <arg of bin_op>.size != label_size(label):
+		# 	err('TypeError: Size mismatch for binary operator.')
 
-		if bin_op: label = call_function(bin_op, ('$a', '$c'), label = label)
+		if bin_op:
+			call_function(bin_op, ('$a', '$c'),
+				reg_sizes = (size, label_size(b_label)))
+			b_label = get_call_label(bin_op)
+		elif uni_chain: b_label = get_call_label(uni_chain[0])
+		else: b_label = v_label
 
+		cast = None
 		bin_op = True
 		uni_chain = []
 
