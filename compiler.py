@@ -29,7 +29,7 @@ class Patterns:
 	empty = re.compile(r'\[\][3-6]')
 
 	shape = r'(?:(?:\[\d+\])*|\[\]|\*)'
-	unit  = r'[3-6]|[A-Za-z_]\w*' # add tuple support
+	unit  = r'(?:[3-6]|[A-Za-z_]\w*)' # add tuple support
 	label = rf'{shape}{unit}'
 	token = re.compile(rf'@({label})|\d+|[a-zA-Z_]\w*|(\S)')
 	decl  = re.compile(rf'@({label}\s+|{shape}[3-6])([A-Za-z_]\w*)')
@@ -91,8 +91,8 @@ def new_var(token, init = None):
 
 	if Patterns.empty.fullmatch(label):
 		if init is None:
-			err('ValueError: Implicit length requires initialisation.')
-		init_length = len(init)
+			err('SyntaxError: Implicit length requires initialisation.')
+		init_length = len(init)//label_size(label, unit = True)
 		label = label[0]+str(init_length)+label[1:]
 
 	if name in variables: # check prev
@@ -103,24 +103,26 @@ def new_var(token, init = None):
 		if init:
 			if var.init and var.init != init:
 				err(f'ValueError: Initialisation mismatch for {var.name!r}.'
-					f'\n  Expected {var.init}'
-					f'\n  Got      {init}')
+					f'\n  Expected {[*var.init]}'
+					f'\n  Got      {[*init]}')
 			var.init = init
 		return
 
 	var = Variable(label, name)
 
 	variables[name] = var
-	shape_len = get_length(shape)
-	if init:
-		init_length = len(init)
-		if init_length != shape_len:
-			err(f'ValueError: Shape expects {shape_len} elements. '
-				f'Got {init_length} instead.')
+
+	if not init: output(var.enc_name+': resb', var.size)
+	else: # check if init matches label
+		if '[' not in label:
+			err('ValueError: Cannot initialize non-sequence as sequence.')
+		if '*' in label: err('ValueError: Sequence initialisation '
+			'not yet supported for pointers.')
+		size = label_size(label)
+		if len(init) != size:
+			err(f'TypeError: {var.name!r} needs {size} bytes. '
+				f'Got {len(init)} instead.')
 		var.init = init
-	else:
-		size = varinfo(name, GET_SIZE)[0]
-		output(var.enc_name+': res'+size, shape_len)
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var.isdigit(): var = Literal('6', var)
@@ -263,16 +265,20 @@ def get_length(label):
 		length *= int(i)
 	return length
 
-def label_size(label): # number of bytes
+def label_size(label, unit = False): # number of bytes
+	if unit: num
 	fac = 1
 	num = ''
 	for i, d in enumerate(label):
-		# add support for varrs
-		if d == ']': fac *= int(num); num = ''
-		elif d.digit(): num += d
-		elif d == '*': return 4*fac
-		elif d.isalpha(): return labels[label[i:]].size*fac
-	if num: return (1<<(max(0, int(num)-3)))
+		if d.isalpha(): num = labels[label[i:]].size; break
+		if d == '*': num = 4; break
+		# add support for varrs (6, *d)
+		if unit:
+			if d.isdigit(): num = d
+		elif d == ']': fac *= int(num); num = ''
+		elif d.isdigit(): num += d
+	fac = unit or fac
+	if num: return (fac<<(max(0, int(num)-3)))
 	# control comes here only if the label format isn't right
 	err('SyntaxError: Invalid label syntax.')
 
@@ -335,8 +341,9 @@ for line_no, line in enumerate(infile, 1):
 	lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
 	lhs = lhs.strip()
 	decls = lhs.split()
+	decl = Patterns.decl.match(lhs)
 
-	if not Patterns.decl.match(lhs): continue
+	if not decl: continue
 
 	if not rhs:
 		for decl in decls:
@@ -348,18 +355,20 @@ for line_no, line in enumerate(infile, 1):
 	if not lhs: err('SyntaxError: Assignment without destination.')
 	if len(decls) > 1:
 		err('SyntaxError: Assignment with multiple declarations')
-	var = decls[0]
-	init = []
+	var = decl[0]
+	size = label_size(decl[1], unit = True)
+	init = bytearray()
 
 	rhs = rhs[0].strip()
 	end = False
+	# Clean this up. Must expect comma after each value.
 	if rhs[0] == '[':
 		for token in Patterns.wsep.split(rhs[1:]):
 			token = token.strip()
 			if not token: continue
 			if end:
 				err('SyntaxError: Token found after array initialisation.')
-			if token.isdigit(): init.append(int(token))
+			if token.isdigit(): init.extend(int(token).to_bytes(size, 'big'))
 			elif token == ']': end = True
 			elif token != ',': err('SyntaxError: Invalid token'
 				f' {token!r} in array initialisation.')
@@ -369,7 +378,8 @@ for line_no, line in enumerate(infile, 1):
 		s = rhs[0]
 		str_state = CHAR
 		for c in rhs[1:]:
-			if str_state == ESCAPE:
+			if end: err('SyntaxError: Token found after string initialisation.')
+			elif str_state == ESCAPE:
 				str_state = CHAR
 				if c == 'x': str_state = HEX_ESCAPE; init.append(0)
 				elif c not in escape_sequences:
@@ -385,11 +395,10 @@ for line_no, line in enumerate(infile, 1):
 					str_state = 0
 
 			elif c == '\\': str_state = ESCAPE
-			elif c == s: break
+			elif c == s: end = True
 			else: init.append(ord(c))
-			# print(c, f'{init_type:06b}', init)
-		else: err('SyntaxError: EOL while parsing string.')
-
+		else:
+			if not end: err('SyntaxError: EOL while parsing string.')
 	new_var(var, init = init)
 
 # Writing to the data segment
@@ -403,11 +412,11 @@ inits = False
 for var in variables.values():
 	if not var.init: continue
 	inits = True
-	size = size_list[int(var.shape[-1])][0]
 
 	if debug: print(var.name, '=', var.init)
-	output(var.enc_name+': d'+size, end = ' ')
-	output(*var.init, sep = ', ')
+	output(var.enc_name+': db', end = ' ')
+	if not var.init.isascii(): output(*var.init, sep = ', ')
+	else: output(f'`{repr(var.init)[12:-2].replace('`', '\\`')}`')
 if debug and not inits: print(None)
 
 # Writing to the text segment
