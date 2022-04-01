@@ -58,6 +58,11 @@ class Variable:
 	def get_label(self):
 		return self.labels[-1]
 
+	def get_clause(self, unit = False):
+		label = self.get_label()
+		size = int(label[-1]) if '*' not in label or unit else 6
+		return f'{size_list[self.size]} [{self.enc_name}]'
+
 class Register(Variable):
 	def var_encode(self):
 		# assuming label[0] for register gives unit
@@ -66,8 +71,11 @@ class Register(Variable):
 		a, b = reg_list[int(unit)]
 		return a+self.name+b
 
+	def get_clause(self, unit = False): return self.var_encode()
+
 class Literal(Variable):
 	def var_encode(self): return self.name
+	def get_clause(self, unit = False): return self.name
 
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
@@ -115,17 +123,20 @@ def new_var(token, init = None):
 		output(var.enc_name+': res'+size, shape_len)
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
-	if var not in variables: err(f'ValueError: {var!r} is not declared.')
-	var = variables[var]
+	if var.isdigit(): var = Literal('6', var)
+	# varinfo doesn't support registers
+	elif var in variables: var = variables[var]
+	else: err(f'ValueError: {var!r} is not declared.')
+
 	# size, int and reg for pointers will already be known, so it isn't needed
 	# clause of a pointer has to be with a dword, so no need extra flag
 	# no, but it doesn't work with the builtins so yes extra flag
 	label = var.get_label()
 	# add support for size from label names
-	size = int(label[-1]) if '*' not in label or flags&USE_UNITSIZE else 5
+	size = int(label[-1]) if '*' not in label or flags&USE_UNITSIZE else 6
 	out = ()
-	if flags&GET_CLAUSE: out += (f'{size_list[size]} [{var.enc_name}]',)
-	# if flags&GET_LENGTH: out += (get_length(var.shape),)
+	if flags&GET_CLAUSE: out += (var.get_clause(flags&USE_UNITSIZE),)
+	if flags&GET_LENGTH: out += (get_length(var.get_label()),)
 	if flags&GET_SIZE: out += (f'{size_list[size]}',)
 	if flags&GET_NBYTES: out += (var.size,)
 	if flags&GET_REG: a, b = reg_list[size]; out += (a+reg+b,)
@@ -216,7 +227,7 @@ def assign(dest, imm = None):
 # Would take subject to check if it is a call to a function
 # and not to a variable with a __call__ method.
 # Should that check be here?
-def call_function(enc_op, args = ()):
+def call_function(enc_op, args = (), reg_sizes = ()):
 	if enc_op in snippets:
 		insert_snippet(enc_op, args = args)
 		return
@@ -225,8 +236,11 @@ def call_function(enc_op, args = ()):
 
 	# Make this compatible with 64-bit
 	offset = 0
-	for arg in args:
-		arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_NBYTES)
+	for i, arg in enumerate(args):
+		if i < len(reg_sizes):
+			arg_clause, size = varinfo(arg), reg_sizes[i]
+		else:
+			arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_NBYTES)
 		output('push', arg_clause)
 		offset += size
 
@@ -249,7 +263,7 @@ def get_length(label):
 		length *= int(i)
 	return length
 
-def label_size(label):
+def label_size(label): # number of bytes
 	fac = 1
 	num = ''
 	for i, d in enumerate(label):
