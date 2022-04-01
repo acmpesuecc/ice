@@ -20,6 +20,40 @@ infile = open(argv[1])
 out = open(argv[2], 'w')
 def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 
+sfile = open('builtins.ice-snippet')
+
+# byte if size <= 8, word if 16 ...
+size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
+reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
+
+escape_sequences = {
+	'a':'\a','n':'\n','f':'\f','t':'\t','v':'\v','r':'\r',
+	"'":'\'','"':'"','\\':'\\'}
+
+# a few dunder methods
+unary = {
+	'+': '__pos__',
+	'-': '__neg__',
+	'~': '__invert__',
+	'*': '__deref__',
+	'&': '__ref__',
+}
+
+binary = {
+	'|' : '__or__',
+	'&' : '__and__',
+	'^' : '__xor__',
+	'+' : '__add__',
+	'-' : '__sub__',
+	'*' : '__mul__',
+	'/' : '__truediv__',
+	# '//': '__floordiv__',
+	# '**': '__pow__',
+	# '<<': '__lshift__',
+	# '>>': '__rshift__',
+}
+
+
 import re
 class Patterns:
 	wsep  = re.compile(r'\b')
@@ -85,6 +119,74 @@ def err(msg):
 	print(msg)
 	quit(1)
 
+def get_length(label):
+	# if label[0] == '*': return 1
+	length = 1
+	# add support for dynamic arrays
+	for i in label[1:-2].split(']['):
+		if not i: continue
+		length *= int(i)
+	return length
+
+def label_size(label, unit = False): # number of bytes
+	if unit: num
+	fac = 1
+	num = ''
+	for i, d in enumerate(label):
+		if d.isalpha(): num = labels[label[i:]].size; break
+		if d == '*': num = 4; break
+		# add support for varrs (6, *d)
+		if unit:
+			if d.isdigit(): num = d
+		elif d == ']': fac *= int(num); num = ''
+		elif d.isdigit(): num += d
+	fac = unit or fac
+	if num: return (fac<<(max(0, int(num)-3)))
+	# control comes here only if the label format isn't right
+	err('SyntaxError: Invalid label syntax.')
+
+def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
+	if var.isdigit(): var = Literal('6', var)
+	# varinfo doesn't support registers
+	elif var in variables: var = variables[var]
+	else: err(f'ValueError: {var!r} is not declared.')
+
+	# size, int and reg for pointers will already be known, so it isn't needed
+	# clause of a pointer has to be with a dword, so no need extra flag
+	# no, but it doesn't work with the builtins so yes extra flag
+	label = var.get_label()
+	# add support for size from label names
+	size = int(label[-1]) if '*' not in label or flags&USE_UNITSIZE else 6
+	out = ()
+	if flags&GET_CLAUSE: out += (var.get_clause(flags&USE_UNITSIZE),)
+	if flags&GET_LENGTH: out += (get_length(var.get_label()),)
+	if flags&GET_SIZE: out += (f'{size_list[size]}',)
+	if flags&GET_NBYTES: out += (var.size,)
+	if flags&GET_REG: a, b = reg_list[size]; out += (a+reg+b,)
+
+	if len(out) == 1: return out[0]
+	return out
+
+def fun_encode(label, op):
+	# check if label has that method?
+	op = op.replace('_', '__')
+	if len(op.lstrip('_'))+4 <= len(op) >= len(op.rstrip('_'))+4:
+		op = '_d'+op[4:-4]
+	else: op = '_m'+op
+
+	# # _a and _u need to be preserved
+	# if label[0] == '_' and label[1] != '_': label = label.replace('_', ' ', 1)
+	enc_op = label.translate({
+		# ord(' '): '_',
+		ord('_'): '__',
+		ord('*'): '_s',
+		ord('['): '_a',
+		ord(']'): '_',
+	})
+
+	enc_op = label+op
+	return enc_op
+
 def new_var(token, init = None):
 	match = Patterns.decl.match(token)
 	label, name = match[1].strip(), match[2]
@@ -124,27 +226,9 @@ def new_var(token, init = None):
 				f'Got {len(init)} instead.')
 		var.init = init
 
-def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
-	if var.isdigit(): var = Literal('6', var)
-	# varinfo doesn't support registers
-	elif var in variables: var = variables[var]
-	else: err(f'ValueError: {var!r} is not declared.')
-
-	# size, int and reg for pointers will already be known, so it isn't needed
-	# clause of a pointer has to be with a dword, so no need extra flag
-	# no, but it doesn't work with the builtins so yes extra flag
-	label = var.get_label()
-	# add support for size from label names
-	size = int(label[-1]) if '*' not in label or flags&USE_UNITSIZE else 6
-	out = ()
-	if flags&GET_CLAUSE: out += (var.get_clause(flags&USE_UNITSIZE),)
-	if flags&GET_LENGTH: out += (get_length(var.get_label()),)
-	if flags&GET_SIZE: out += (f'{size_list[size]}',)
-	if flags&GET_NBYTES: out += (var.size,)
-	if flags&GET_REG: a, b = reg_list[size]; out += (a+reg+b,)
-
-	if len(out) == 1: return out[0]
-	return out
+def get_call_label(enc_op):
+	if enc_op in snippets: return snippets[enc_op][1]
+	return functions[enc_op][0] # (ret_label, *arg_sizes)
 
 def insert_snippet(fun, args = (), encode = True):
 	sfile.seek(snippets[fun][0])
@@ -171,52 +255,6 @@ def insert_snippet(fun, args = (), encode = True):
 			offset += len(sub)-len(match[0])
 			line = line[:start]+sub+line[end:]
 		output(line.strip())
-
-def fun_encode(label, op):
-	# check if label has that method?
-	op = op.replace('_', '__')
-	if len(op.lstrip('_'))+4 <= len(op) >= len(op.rstrip('_'))+4:
-		op = '_d'+op[4:-4]
-	else: op = '_m'+op
-
-	# # _a and _u need to be preserved
-	# if label[0] == '_' and label[1] != '_': label = label.replace('_', ' ', 1)
-	enc_op = label.translate({
-		# ord(' '): '_',
-		ord('_'): '__',
-		ord('*'): '_s',
-		ord('['): '_a',
-		ord(']'): '_',
-	})
-
-	enc_op = label+op
-	return enc_op
-
-def get_call_label(enc_op):
-	if enc_op in snippets: return snippets[enc_op][1]
-	return functions[enc_op][0] # (ret_label, *arg_sizes)
-
-def assign(dest, imm = None):
-	match = Patterns.dest.match(dest)
-	var, index = match[2], match[3]
-	# print(dest, (var, index), sep = ' -> ')
-
-	if index:
-		if imm: output('mov eax,', imm)
-		fun = fun_encode(var.get_label(), '__setitem__')
-		call_function(fun, (var, index))
-		return
-
-	if variables[var].shape[0] == '*':
-		if not imm: output('mov ebx, eax'); src = 'ebx'
-		else: src = imm
-		insert_snippet('_ptralloc', (var, src), encode = False)
-		return
-
-	if imm: output(f'mov {varinfo(var)}, {imm}')
-	else:
-		clause, reg = varinfo(var, flags = GET_CLAUSE|GET_REG)
-		output(f'mov {clause}, {reg}')
 
 # def call_function(subject, op, args = (), label = None):
 	# if label is not None: enc_op = fun_encode(label, op); args = (subject,)+args
@@ -256,68 +294,31 @@ def call_function(enc_op, args = (), reg_sizes = ()):
 	output('call', enc_op)
 	output('add esp,', offset)
 
-def get_length(label):
-	# if label[0] == '*': return 1
-	length = 1
-	# add support for dynamic arrays
-	for i in label[1:-2].split(']['):
-		if not i: continue
-		length *= int(i)
-	return length
+def assign(dest, imm = None):
+	match = Patterns.dest.match(dest)
+	var, index = match[2], match[3]
+	# print(dest, (var, index), sep = ' -> ')
 
-def label_size(label, unit = False): # number of bytes
-	if unit: num
-	fac = 1
-	num = ''
-	for i, d in enumerate(label):
-		if d.isalpha(): num = labels[label[i:]].size; break
-		if d == '*': num = 4; break
-		# add support for varrs (6, *d)
-		if unit:
-			if d.isdigit(): num = d
-		elif d == ']': fac *= int(num); num = ''
-		elif d.isdigit(): num += d
-	fac = unit or fac
-	if num: return (fac<<(max(0, int(num)-3)))
-	# control comes here only if the label format isn't right
-	err('SyntaxError: Invalid label syntax.')
+	if index:
+		if imm: output('mov eax,', imm)
+		fun = fun_encode(var.get_label(), '__setitem__')
+		call_function(fun, (var, index))
+		return
+
+	if variables[var].shape[0] == '*':
+		if not imm: output('mov ebx, eax'); src = 'ebx'
+		else: src = imm
+		insert_snippet('_ptralloc', (var, src), encode = False)
+		return
+
+	if imm: output(f'mov {varinfo(var)}, {imm}')
+	else:
+		clause, reg = varinfo(var, flags = GET_CLAUSE|GET_REG)
+		output(f'mov {clause}, {reg}')
 
 variables = {}
 functions = {}
 labels    = {}
-
-escape_sequences = {
-	'a':'\a','n':'\n','f':'\f','t':'\t','v':'\v','r':'\r',
-	"'":'\'','"':'"','\\':'\\'}
-
-# a few dunder methods
-unary = {
-	'+': '__pos__',
-	'-': '__neg__',
-	'~': '__invert__',
-	'*': '__deref__',
-	'&': '__ref__',
-}
-
-binary = {
-	'|' : '__or__',
-	'&' : '__and__',
-	'^' : '__xor__',
-	'+' : '__add__',
-	'-' : '__sub__',
-	'*' : '__mul__',
-	'/' : '__truediv__',
-	# '//': '__floordiv__',
-	# '**': '__pow__',
-	# '<<': '__lshift__',
-	# '>>': '__rshift__',
-}
-
-# byte if size <= 8, word if 16 ...
-size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
-reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
-
-sfile = open('builtins.ice-snippet')
 
 snippets = {}
 tell = 0
