@@ -272,7 +272,7 @@ def insert_snippet(fun, args = (), encode = True):
 # Would take subject to check if it is a call to a function
 # and not to a variable with a __call__ method.
 # Should that check be here?
-def call_function(enc_op, args = (), reg_sizes = ()):
+def call_function(enc_op, args = (), reg_sizes = []):
 	if enc_op in snippets:
 		insert_snippet(enc_op, args = args)
 		return
@@ -281,11 +281,13 @@ def call_function(enc_op, args = (), reg_sizes = ()):
 
 	# Make this compatible with 64-bit
 	offset = 0
-	for i, arg in enumerate(args):
-		if i < len(reg_sizes):
-			arg_clause, size = varinfo(arg), reg_sizes[i]
-		else:
+	for arg in args:
+		if not arg.startswith('$'):
 			arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_NBYTES)
+		else:
+			size = reg_sizes.pop(0)
+			l, r = reg_list
+			arg_clause = l + arg[1] + r
 		output('push', arg_clause)
 		offset += size
 
@@ -299,15 +301,16 @@ def call_function(enc_op, args = (), reg_sizes = ()):
 	output('call', enc_op)
 	output('add esp,', offset)
 
-def assign(dest, imm = None):
+def assign(dest, imm: str = None): # accept any value
+	# TODO: get size of LHS (assuming 64-bit rn)
 	match = Patterns.dest.match(dest)
 	var, index = match[2], match[3]
 	# print(dest, (var, index), sep = ' -> ')
 
 	if index:
-		if imm: output('mov eax,', imm)
-		fun = fun_encode(var.get_label(), '__setitem__')
-		call_function(fun, (var, index))
+		fun = fun_encode(variables[var].get_label(), '__setitem__')
+		if imm: call_function(fun, (var, index, imm))
+		else:   call_function(fun, (var, index, '$a'), reg_sizes = [8])
 		return
 
 	if variables[var].shape[0] == '*':
@@ -495,7 +498,7 @@ for line_no, line in enumerate(infile, 1):
 		for uni in reversed(uni_chain[:-1]):
 			if uni.isidentifier(): enc_op = uni
 			else: enc_op = fun_encode(label, unary[uni])
-			call_function(enc_op, ('$a',), reg_sizes = (size,))
+			call_function(enc_op, ('$a',), reg_sizes = [size])
 			label = get_call_label(enc_op)
 			size = label_size(label)
 		# if <arg of bin_op>.size != label_size(label):
@@ -503,7 +506,7 @@ for line_no, line in enumerate(infile, 1):
 
 		if bin_op:
 			call_function(bin_op, ('$a', '$c'),
-				reg_sizes = (size, label_size(b_label)))
+				reg_sizes = [size, label_size(b_label)])
 			b_label = get_call_label(bin_op)
 		elif uni_chain: b_label = get_call_label(uni_chain[0])
 		else: b_label = v_label
