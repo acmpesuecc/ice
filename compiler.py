@@ -8,7 +8,7 @@
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
 from sys import argv
-debug = False
+debug = True
 if '-d' in argv: debug = True; argv.remove('-d')
 if len(argv) <2:
 	if debug: argv.append('Examples\\hello.ice')
@@ -59,7 +59,6 @@ class Patterns:
 	wsep  = re.compile(r'\b')
 	hex   = re.compile(r'[\da-fA-F]')
 	equal = re.compile(r'(?<!=)=(?!=)')
-	space = re.compile(r'\s+')
 	empty = re.compile(r'\[\][3-6]')
 
 	shape = r'(?:(?:\[\d+\])*|\[\]|\*)'
@@ -152,7 +151,7 @@ def element_size(label):
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var.isdigit(): var = Literal('6', var)
-	# varinfo doesn't support registers
+	# add register support
 	elif var in variables: var = variables[var]
 	else: err(f'ValueError: {var!r} is not declared.')
 
@@ -190,6 +189,8 @@ def fun_encode(label, op):
 	})
 
 	enc_op = label+op
+	if enc_op not in functions:
+		err(f'NameError: Function {enc_op!r} not defined.')
 	return enc_op
 
 def new_var(token, init = None):
@@ -205,8 +206,9 @@ def new_var(token, init = None):
 	if name in variables: # check prev
 		var = variables[name]
 		size = label_size(label)
+		# TODO: plural
 		if var.size != size: err(f'TypeError: {var.name!r}'
-			f'uses {var.size} bytes, but {label!r} needs {size} bytes.')
+			f' uses {var.size} bytes, but {label!r} needs {size} bytes.')
 		if init:
 			if var.init and var.init != init:
 				err(f'ValueError: Initialisation mismatch for {var.name!r}.'
@@ -226,6 +228,7 @@ def new_var(token, init = None):
 		if '*' in label: err('ValueError: Sequence initialisation '
 			'not yet supported for pointers.')
 		size = label_size(label)
+		# TODO: plural
 		if len(init) != size:
 			err(f'TypeError: {var.name!r} needs {size} bytes. '
 				f'Got {len(init)} instead.')
@@ -313,11 +316,12 @@ def assign(dest, imm: str = None): # accept any value
 		else:   call_function(fun, (var, index, '$a'), reg_sizes = [8])
 		return
 
-	if variables[var].shape[0] == '*':
-		if not imm: output('mov ebx, eax'); src = 'ebx'
-		else: src = imm
-		insert_snippet('_ptralloc', (var, src), encode = False)
-		return
+	# # Use __setat__ when * in dest
+	# if variables[var].shape[0] == '*':
+	# 	if not imm: output('mov ebx, eax'); src = 'ebx'
+	# 	else: src = imm
+	# 	insert_snippet('_ptralloc', (var, src), encode = False)
+	# 	return
 
 	if imm: output(f'mov {varinfo(var)}, {imm}')
 	else:
@@ -331,14 +335,18 @@ labels    = {}
 snippets = {}
 tell = 0
 for line_no, line in enumerate(sfile, 1):
-	tell += len(line)
+	tell += len(line)+1 # CRLF
 	if not line.startswith('; '): continue
-	name, ret, *args = line[2:].split()
-	snippets[name] = (name, ret, args)
+	name, *types = line[2:].split()
+	snippets[name] = (tell, types)
 # starts at a line starting with '; ' (mind the space)
 # ends at a line with just ';' (refer `insert_snippet()`)
 
-if debug: print('BUILTINS: ', *snippets)
+if debug:
+	print('BUILTINS: ', *snippets)
+	for snippet in snippets:
+		sfile.seek(snippets[snippet][0])
+		print(snippet, repr(sfile.read(10)+'...'), sep = ':\t')
 
 insert_snippet('_header')
 
@@ -349,7 +357,7 @@ for line_no, line in enumerate(infile, 1):
 	stmt = Patterns.stmt.match(line)[0].strip()
 	lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
 	lhs = lhs.strip()
-	decls = lhs.split()
+	decls = lhs.split() # @ declarations have spaces in them
 	decl = Patterns.decl.match(lhs)
 
 	if not decl: continue
@@ -365,25 +373,26 @@ for line_no, line in enumerate(infile, 1):
 	if len(decls) > 1:
 		err('SyntaxError: Assignment with multiple declarations')
 	var = decl[0]
-	init = bytearray()
 	size = element_size(decl[1])
 
 	rhs = rhs[0].strip()
 	end = False
 	# Clean this up. Must expect comma after each value.
-	if rhs[0] == '[':
+	if rhs[0] == '[': # TODO: robust syntax
+		init = bytearray()
 		for token in Patterns.wsep.split(rhs[1:]):
 			token = token.strip()
 			if not token: continue
-			if end:
-				err('SyntaxError: Token found after array initialisation.')
+			if end: err('SyntaxError: Token found after array initialisation.')
 			if token.isdigit(): init.extend(int(token).to_bytes(size, 'big'))
 			elif token == ']': end = True
 			elif token != ',': err('SyntaxError: Invalid token'
 				f' {token!r} in array initialisation.')
 		if not end: err('SyntaxError: Multi-line arrays are not yet supported.')
 
-	elif rhs[0] in '"\'':
+	elif rhs[0] in '"\'': # single char single quotes not yet char literal
+		# TODO: test robust syntax
+		init = bytearray()
 		s = rhs[0]
 		str_state = CHAR
 		for c in rhs[1:]:
@@ -401,13 +410,14 @@ for line_no, line in enumerate(infile, 1):
 				if not init[-1]: init[-1] |= int(c, 16)<<4 | 15
 				else:
 					init[-1] = ~15&init[-1] | int(c, 16)
-					str_state = 0
+					str_state = CHAR
 
 			elif c == '\\': str_state = ESCAPE
 			elif c == s: end = True
 			else: init.append(ord(c))
 		else:
 			if not end: err('SyntaxError: EOL while parsing string.')
+	else: init = None
 	new_var(var, init = init)
 
 # Writing to the data segment
@@ -416,17 +426,20 @@ if debug: print('VARIABLES:', *variables.values())
 
 output()
 insert_snippet('_data')
-if debug: print('\nINITS:')
-inits = False
+if debug: print('\nINITS:'); inits = False
 for var in variables.values():
 	if not var.init: continue
-	inits = True
+	if debug: print(var.name, '=', var.init); inits = True
 
-	if debug: print(var.name, '=', var.init)
-	output(var.enc_name+': db', end = ' ')
-	if not var.init.isascii(): output(*var.init, sep = ', ')
-	else: output(f'`{repr(var.init)[12:-2].replace('`', '\\`')}`')
+	output(var.enc_name, end = ': db ')
+	out = repr(var.init)[12:-2].replace('`', '\\`')
+	if '\\x' not in out: output(f'`{out}`')
+	else: output(*var.init, sep = ', ')
 if debug and not inits: print(None)
+
+for var in variables:
+	if var.init: output(f'_name_{var.name}: db "{var.name}: %s\n"')
+	else: output(f'_name_{var.name}: db "{var.name}: %d\n"')
 
 # Writing to the text segment
 
@@ -533,3 +546,10 @@ for line_no, line in enumerate(infile, 1):
 		sclause, sreg = varinfo(subject, flags = GET_CLAUSE|GET_REG)
 		output(f'mov {sreg}, {sclause}')
 		assign(dest)
+
+if debug: # print all variables
+	output('push rbp')
+	for var in variables:
+		insert_snippet('_dprint', (var.name))
+	output('pop  rbp')
+	

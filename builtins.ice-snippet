@@ -8,9 +8,9 @@
 ;; %0 is the subject
 
 ; _header
-extern _printf
-extern _malloc
-global _main
+extern printf
+extern malloc
+global main
 ;
 
 ; _data
@@ -25,6 +25,13 @@ push %0n
 call _malloc
 mov %0, eax
 mov %0s [eax], %1
+;
+
+; _dprint
+mov  rsi, %0
+mov  rdi, _name_%0r
+xor  rax, rax
+call printf
 ;
 
 ; _u_dadd
