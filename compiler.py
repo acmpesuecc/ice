@@ -128,22 +128,27 @@ def get_length(label):
 		length *= int(i)
 	return length
 
-def label_size(label, unit = False): # number of bytes
-	if unit: num
+def label_size(label): # number of bytes
 	fac = 1
 	num = ''
 	for i, d in enumerate(label):
 		if d.isalpha(): num = labels[label[i:]].size; break
-		if d == '*': num = 4; break
+		if d == '*': num = 6; break
 		# add support for varrs (6, *d)
-		if unit:
-			if d.isdigit(): num = d
-		elif d == ']': fac *= int(num); num = ''
+		if d == ']': fac *= int(num); num = ''
 		elif d.isdigit(): num += d
-	fac = unit or fac
 	if num: return (fac<<(max(0, int(num)-3)))
 	# control comes here only if the label format isn't right
 	err('SyntaxError: Invalid label syntax.')
+
+def element_size(label):
+	if '*' in label: num = 8
+	elif label[-1].isdigit(): num = int(label[-1])
+	else: num = 8
+
+	# TODO: support named labels
+
+	return num
 
 def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 	if var.isdigit(): var = Literal('6', var)
@@ -194,7 +199,7 @@ def new_var(token, init = None):
 	if Patterns.empty.fullmatch(label):
 		if init is None:
 			err('SyntaxError: Implicit length requires initialisation.')
-		init_length = len(init)//label_size(label, unit = True)
+		init_length = len(init)//element_size(label)
 		label = label[0]+str(init_length)+label[1:]
 
 	if name in variables: # check prev
@@ -357,8 +362,8 @@ for line_no, line in enumerate(infile, 1):
 	if len(decls) > 1:
 		err('SyntaxError: Assignment with multiple declarations')
 	var = decl[0]
-	size = label_size(decl[1], unit = True)
 	init = bytearray()
+	size = element_size(decl[1])
 
 	rhs = rhs[0].strip()
 	end = False
