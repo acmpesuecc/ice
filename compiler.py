@@ -22,6 +22,9 @@ def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 
 sfile = open('builtins.ice-snippet')
 
+import os
+CR_offset = int(os.name == 'nt')
+
 # byte if size <= 8, word if 16 ...
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
 reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
@@ -335,18 +338,14 @@ labels    = {}
 snippets = {}
 tell = 0
 for line_no, line in enumerate(sfile, 1):
-	tell += len(line)+1 # CRLF
+	tell += len(line)+CR_offset
 	if not line.startswith('; '): continue
 	name, *types = line[2:].split()
 	snippets[name] = (tell, types)
 # starts at a line starting with '; ' (mind the space)
 # ends at a line with just ';' (refer `insert_snippet()`)
 
-if debug:
-	print('BUILTINS: ', *snippets)
-	for snippet in snippets:
-		sfile.seek(snippets[snippet][0])
-		print(snippet, repr(sfile.read(10)+'...'), sep = ':\t')
+if debug: print('BUILTINS: ', *snippets)
 
 insert_snippet('_header')
 
@@ -549,7 +548,5 @@ for line_no, line in enumerate(infile, 1):
 
 if debug: # print all variables
 	output('push rbp')
-	for var in variables:
-		insert_snippet('_dprint', (var.name))
+	for var in variables: insert_snippet('_dprint', (var.name,))
 	output('pop  rbp')
-	
