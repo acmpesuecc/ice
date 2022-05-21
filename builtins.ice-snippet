@@ -58,7 +58,7 @@ mov rax, qword [%0e]
 mov %ea, %es [%0]
 ;
 
-; _udref *$e s
+; _udref *$s s
 mov rax, %0e
 ;
 

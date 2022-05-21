@@ -18,6 +18,8 @@ More details are in the [wiki](../../wiki)
 ## Installation
 Haven't cleaned this part yet, so you'll have to download the repo files. You'll also need [nasm](https://www.nasm.us/pub/nasm/snapshots/latest/) and [gcc](https://www.mingw-w64.org/downloads/).
 
+**Note:** For Windows, you'll need to specify 64-bit during installation. (in the dialog box, change Architecture from `i686` to `x86_64`)
+
 
 ### Getting nasm and gcc on Arch Linux
 _Yeah, I use arch btw._
