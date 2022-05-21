@@ -1,66 +1,78 @@
-;; %1a-d: for corresponding register of unit size
-;; %1r:   for raw name
-;; %1s:   for size ('byte', 'word' etc.)
-;; %1n:   for size as number of bytes
+;; Available for only variables:
+;; %1r:   for raw name (as in the source code)
+;; %1e:   for the encoded name (as in the assembly file)
 ;; %1l:   for length of the array (1 for non-array variables)
-;; just %1: short for %1s [%1r]
-;; the number after the % sign is the index of the argument
-;; %0 is the subject
 
-; _header
+;; Available for both variables and registers:
+;; %1s:   for size ('byte', 'word' etc.)
+;; %1c:   for clause (short for %1s [%1e])
+;; %1n:   for size as number of bytes
+;; %1a-d: for corresponding register of unit size
+
+;; the number after the % sign is the index of the argument (zero indexed)
+;; %e followed by a suffix/tail will give the information of an element of self
+;; eg. element of *3 is 3, element of [4]*[2]5 is *[2]5
+
+; _header void
 extern printf
 extern malloc
 global main
 ;
 
-; _data
+; _data void
 segment .data
 _p: db `%u\n`, 0
 _c: db 0, 0
 _ln: db 0, 10, 0
 ;
 
-; _ptralloc
-push %0n
-call _malloc
-mov %0, eax
-mov %0s [eax], %1
-;
-
-; _dprint
-mov  rsi, %0
+; _udprint void s
+mov  rsi, %0e
 mov  rdi, _name_%0r
 xor  rax, rax
 call printf
 ;
 
-; _u_dadd
-mov %0a, %0
-add %1a, %1
+; _udneg $s s
+mov %sa, %0c
+neg %sa
 ;
 
-; _u_dsub
-mov %0a, %0
-sub %1a, %1
+; _udadd $s s s
+mov %sa, %0
+add %sa, %1
 ;
 
-; _u_dmul
-mov %0a, %0
-mul %1
+; _udsub $s s s
+mov %sa, %0c
+sub %sa, %1c
 ;
 
-; _a_dgetitem
+; _udmul $s s s
+mov %sa, %0c
+mul %1c
+;
+
+; 6_dderef $e 8
+mov rax, qword [%0e]
+mov %ea, %es [%0]
+;
+
+; _udref *$e s
+mov rax, %0e
+;
+
+; _adgetitem $e e
 mov %1a, %1
-mov %0a, %0s [eax * %0n + %0r]
+mov %0a, %0s [eax * %0n + %0e]
 ;
 
-; _a_dsetitem
-xor ecx, ecx
-mov %1c, %1
-mov %0s [ecx * %0n + %0r], %0a
+; _adsetitem void 
+mov %1b, %1
+mov %0s [%1b * %0n + %0e], %0a
 ;
 
-; printnum
+; printnum void
 xor eax, eax
 xor %1a, %1
 push eax
@@ -69,13 +81,13 @@ call _printf
 add esp, 8
 ;
 
-; print
-mov bl, byte [(%1l*%1n) + (%1r-1)]
-mov byte [(%1l*%1n) + (%1r-1)], 0
-push %1r
+; print void
+mov bl, byte [(%1l*%1n) + (%1e-1)]
+mov byte [(%1l*%1n) + (%1e-1)], 0
+push %1e
 call _printf
 add esp, 4
-mov byte [(%1l*%1n) + (%1r-1)], bl
+mov byte [(%1l*%1n) + (%1e-1)], bl
 
 mov byte [_c], bl
 push _c
@@ -83,21 +95,16 @@ call _printf
 add esp, 4
 ;
 
-; println
-mov bl, byte [(%1l*%1n) + (%1r-1)]
-mov byte [(%1l*%1n) + (%1r-1)], 0
-push %1r
+; println void
+mov bl, byte [(%1l*%1n) + (%1e-1)]
+mov byte [(%1l*%1n) + (%1e-1)], 0
+push %1e
 call _printf
 add esp, 4
-mov byte [(%1l*%1n) + (%1r-1)], bl
+mov byte [(%1l*%1n) + (%1e-1)], bl
 
 mov byte [_ln], bl
 push _ln
 call _printf
 add esp, 4
-;
-
-; deref
-mov eax, %1
-mov %1a, %1s [eax]
 ;
