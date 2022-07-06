@@ -68,8 +68,8 @@ class Patterns:
 	unit  = r'(?:[3-6]|[A-Za-z_]\w*)' # add tuple support
 	label = rf'{shape}{unit}'
 	token = re.compile(rf'@({label})|\d+|[a-zA-Z_]\w*|(\S)')
-	decl  = re.compile(rf'@({label}\s+|{shape}[3-6])([A-Za-z_]\w*)')
 	dest  = re.compile(rf'(@{label}\s+|{shape}[3-6])?([A-Za-z_]\w*)'
+	decl  = re.compile(rf'(@({label})\s+|{shape}[3-6])([A-Za-z_]\w*)')
 			r'(?:\[([A-Za-z_]\w*)\])?')
 
 	stmt  = re.compile(r'(([\'"])(\\?.)*?\2|[^#])*')
@@ -187,10 +187,7 @@ def fun_encode(label, op):
 	if debug: print(f'fun_encode({label!r}, {op!r}) -> {enc_op!r}')
 	return enc_op
 
-def new_var(token, init = None):
-	match = Patterns.decl.match(token)
-	label, name = match[1].strip(), match[2]
-
+def declare(label, name, init = None):
 	if Patterns.empty.fullmatch(label):
 		if init is None:
 			err('SyntaxError: Implicit length requires initialisation.')
@@ -353,20 +350,28 @@ for line_no, line in enumerate(infile, 1):
 	stmt = Patterns.stmt.match(line)[0].strip()
 	lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
 	lhs = lhs.strip()
-	decls = lhs.split() # @ declarations have spaces in them
+	decls = lhs.split()
 	decl = Patterns.decl.match(lhs)
 
 	if not decl: continue
 
 	if not rhs:
-		for decl in decls:
-			decl = decl.strip()
-			if Patterns.decl.match(decl): new_var(decl)
-			else: err(f'SyntaxError: Expected a declaration token.')
+		if decl[2]:
+			label = lhs.split()[0][1:]
+			for decl in decls[1:]:
+				decl = decl.strip()
+				declare(label, decl)
+		else:
+			for decl in decls:
+				decl = decl.strip()
+				match = Patterns.decl.match(decl)
+				if not match: err(f'SyntaxError: Expected a declaration token.')
+				label, name = match[1].strip(), match[3]
+				declare(label, name)
 		continue
 
 	if not lhs: err('SyntaxError: Assignment without destination.')
-	if len(decls) > 1:
+	if len(decls) != 1 and not (decl[2] and len(decls) == 2):
 		err('SyntaxError: Assignment with multiple declarations')
 	var = decl[0]
 	size = element_size(decl[1])
@@ -414,7 +419,13 @@ for line_no, line in enumerate(infile, 1):
 		else:
 			if not end: err('SyntaxError: EOL while parsing string.')
 	else: init = None
-	new_var(var, init = init)
+
+	var = var.strip()
+	match = Patterns.decl.match(var)
+	if not match: err(f'SyntaxError: Expected a declaration token.')
+	name = match[3]
+	label = match[2] or match[1]
+	declare(label, name, init = init)
 
 # Writing to the data segment
 
