@@ -23,6 +23,9 @@ CR_offset = int(os.name == 'nt')
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
 reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
 
+arg_regs = ['di', 'si', 'c', 'd', 'r8', 'r9']
+if os.name == 'nt': arg_regs = arg_regs[2:]
+
 escape_sequences = {
 	'a':'\a','n':'\n','f':'\f','t':'\t','v':'\v','r':'\r',
 	"'":'\'','"':'"','\\':'\\'}
@@ -337,8 +340,6 @@ def call_function(enc_op, args : tuple[Variable] = ()):
 	if enc_op not in functions:
 		err(f'NameError: Function {enc_op!r} not defined.')
 
-	# Make this compatible with 64-bit
-	offset = 0
 	sizes = functions[enc_op][1:]
 
 	# TODO: plural
@@ -346,25 +347,22 @@ def call_function(enc_op, args : tuple[Variable] = ()):
 		err(f'TypeError: {enc_op!r} takes exactly {len(sizes)} arguments '
 			f'({len(args)} given)')
 
+	offset = -3
 	for arg in args:
-		if not arg.startswith('$'):
-			arg_clause, size = varinfo(arg, flags = GET_CLAUSE|GET_NBYTES)
+		if not arg.size_n:
+			err(f'TypeError: {arg.name!r} cannot be passed as an argument.')
+
+		if offset >= 0: output('push', arg_clause)
 		else:
-			size = reg_sizes.pop(0)
-			l, r = reg_list
-			arg_clause = l + arg[1] + r
-		output('push', arg_clause)
-		offset += size
+			output(f'mov {get_reg(arg_reg[offset], arg.size_n)}, {arg.name}')
+		offset += 1
 
-	# if op != '__call__':
-	# 	subject_clause, size = varinfo(subject, flags = GET_CLAUSE|GET_NBYTES)
-	# 	output('push', subject_clause)
-	# 	offset += size
-	# 	output('call', enc_op)
-	# else: output('call', subject)
-
+	if not offset&1: offset += 1; output('sub rsp, 8')
+	# if vector_fun: output(f'mov rax, {vectors}')
+	output('push rbp')
 	output('call', enc_op)
-	output('add esp,', offset)
+	output('pop rbp')
+	if offset: output('add rsp,', offset*8)
 
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
