@@ -386,12 +386,14 @@ def assign(dest, imm: Variable = None):
 		call_function(fun, (dest, index, imm or Register(label, 'a')))
 		return
 
-	# # Use __setat__ when * in dest
-	# if variables[var].shape[0] == '*':
-	# 	if not imm: output('mov ebx, eax'); src = 'ebx'
-	# 	else: src = imm
-	# 	insert_snippet('_ptralloc', (var, src), encode = False)
-	# 	return
+	# Use __setat__ when * in dest
+	if len(deref) > 2:
+		err("SyntaxError: Can't perform multiple dereferences yet.")
+	if deref:
+		fun = fun_encode(dest.get_label(), '__setat__')
+		label = get_call_sizes(fun)[1]
+		call_function(fun, (dest, imm or Register(label, 'a')))
+		return
 
 	output(f"mov {dest.get_clause()}, {imm or get_reg('a', dest.size_n)}")
 
