@@ -8,7 +8,7 @@
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
 from sys import argv
-debug = True
+debug = False
 if '-d' in argv: debug = True; argv.remove('-d')
 if len(argv) <2:
 	if debug: argv.append('Examples\\hello.ice')
@@ -116,7 +116,7 @@ class Literal(Variable):
 def err(msg):
 	print(f'File "{argv[1]}", line {line_no}')
 	print('   ', line.strip())
-	if debug: raise RuntimeError(repr(msg)) # temporary, for debugging
+	if debug: raise RuntimeError(repr(msg))
 
 	print(msg)
 	quit(1)
@@ -124,17 +124,18 @@ def err(msg):
 def get_length(label):
 	# if label[0] == '*': return 1
 	length = 1
-	# add support for dynamic arrays
+	# TODO: add support for dynamic arrays
 	for i in label[1:-2].split(']['):
 		if not i: continue
 		length *= int(i)
 	return length
 
+labels = {}
 def label_size(label): # number of bytes
 	fac = 1
 	num = ''
 	for i, d in enumerate(label):
-		if d.isalpha(): num = labels[label[i:]].size; break
+		if d.isidentifier(): num = labels[label[i:]].size; break
 		if d == '*': num = 6; break
 		# add support for varrs (6, *d)
 		if d == ']': fac *= int(num); num = ''
@@ -145,7 +146,7 @@ def label_size(label): # number of bytes
 
 def element_size(label):
 	if '*' in label: num = 8
-	elif label[-1].isdigit(): num = int(label[-1])
+	elif label[-1].isdigit(): num = 1<<max(0, int(label[-1])-3)
 	else: num = 8
 
 	# TODO: support named labels
@@ -176,24 +177,14 @@ def varinfo(var, flags = GET_CLAUSE, reg = 'a'):
 
 def fun_encode(label, op):
 	# check if label has that method?
-	op = op.replace('_', '__')
-	if len(op.lstrip('_'))+4 <= len(op) >= len(op.rstrip('_'))+4:
-		op = '_d'+op[4:-4]
-	else: op = '_m'+op
+	enc_op = op.replace('_', '__')
+	if len(op.lstrip('_'))+2 <= len(op) >= len(op.rstrip('_'))+2:
+		enc_op = '_d'+enc_op[4:-4]
+	else: enc_op = '_m'+enc_op
 
-	# # _a and _u need to be preserved
-	# if label[0] == '_' and label[1] != '_': label = label.replace('_', ' ', 1)
-	enc_op = label.translate({
-		# ord(' '): '_',
-		ord('_'): '__',
-		ord('*'): '_s',
-		ord('['): '_a',
-		ord(']'): '_',
-	})
-
-	enc_op = label+op
-	if enc_op not in functions:
-		err(f'NameError: Function {enc_op!r} not defined.')
+	label  = label.replace('_', '__')
+	enc_op = label+enc_op
+	if debug: print(f'fun_encode({label!r}, {op!r}) -> {enc_op!r}')
 	return enc_op
 
 def new_var(token, init = None):
@@ -267,6 +258,12 @@ def insert_snippet(fun, args = (), encode = True):
 			line = line[:start]+sub+line[end:]
 		output(line.strip())
 
+def uni_fill(uni_chain, label):
+	for i, uni in enumerate(reversed(uni_chain), 1):
+		if uni.isidentifier(): break
+		uni_chain[-i] = fun_encode(label, unary[uni])
+		label = get_call_label(uni_chain[-i])
+
 # def call_function(subject, op, args = (), label = None):
 	# if label is not None: enc_op = fun_encode(label, op); args = (subject,)+args
 	# elif subject in variables:
@@ -283,7 +280,8 @@ def call_function(enc_op, args = (), reg_sizes = []):
 		insert_snippet(enc_op, args = args)
 		return
 
-	if enc_op not in functions: err('Function not defined.')
+	if enc_op not in functions:
+		err(f'NameError: Function {enc_op!r} not defined.')
 
 	# Make this compatible with 64-bit
 	offset = 0
@@ -333,7 +331,6 @@ def assign(dest, imm: str = None): # accept any value
 
 variables = {}
 functions = {}
-labels    = {}
 
 snippets = {}
 tell = 0
@@ -435,16 +432,18 @@ for var in variables.values():
 	if '\\x' not in out: output(f'`{out}`')
 	else: output(*var.init, sep = ', ')
 if debug and not inits: print(None)
+if debug: print()
 
-for var in variables:
-	if var.init: output(f'_name_{var.name}: db "{var.name}: %s\n"')
-	else: output(f'_name_{var.name}: db "{var.name}: %d\n"')
+for var in variables.values():
+	# if var.init: output(f'_name_{var.name}: db `{var.name}: %s\\n`, 0')
+	# else:
+		output(f'_name_{var.name}: db `{var.name}: %lld\\n`, 0')
 
 # Writing to the text segment
 
 infile.seek(0)
 output('\nsegment .text')
-output('_main:')
+output('main:')
 for line_no, line in enumerate(infile, 1):
 	line = Patterns.stmt.match(line)[0]
 	dest, _, exp = line.rpartition('=')
@@ -457,7 +456,7 @@ for line_no, line in enumerate(infile, 1):
 	# decl = True
 	uni_chain = []
 	args = []
-	cast = None
+	label = None
 	b_label = None
 	bin_op  = None  # remembered for use after unary operations
 
@@ -481,49 +480,50 @@ for line_no, line in enumerate(infile, 1):
 			if token[2] not in unary:
 				err('SyntaxError: Invalid unary operator.')
 			uni_chain.append(token[2])
-			cast = None
+			label = None
 			continue
 
-		if token[1]: cast = label = token[0]
-		elif token[0].isdigit(): v_label = label = cast or '6'
-		else: v_label = label = cast or variables[token[0]].get_label()
-		assert cast or not uni_chain[-1].isidentifier()
-		assert not cast or uni_chain[-1].isidentifier()
-		for i, uni in enumerate(reversed(uni_chain), 1):
-			if uni.isidentifier(): break
-			uni_chain[-i] = fun_encode(label, unary[uni])
-			label = get_call_label(uni_chain[-i])
+		if token[1]: label = token[1]; uni_fill(uni_chain, label); continue
+		
 
-		if token[1]: continue # label cast. Don't call the functions yet.
+		if uni_chain:
+			assert label or not uni_chain[-1].isidentifier()
+			assert not label or uni_chain[-1].isidentifier()
+
+		if token[0].isdigit(): label = label or '6'
+		else: label = label or variables[token[0]].get_label()
+
+		uni_fill(uni_chain, label)
 
 		# bin_op here is either a name or None, never True
-		if bin_op: output('mov rcx, rax')
+		if bin_op is not None: output('mov rcx, rax')
 
 		var = token[0]
 		if uni_chain:
+			if var not in variables:
+				err(f'NameError: {var!r} not declared.')
+			var = variables[var]
 			call_function(uni_chain[-1], (var,))
 			size = label_size(get_call_label(uni_chain[-1]))
-		elif not var.isdigit(): size = 8; output(f'mov rax, {var}')
+		elif var.isdigit(): size = 8; output(f'mov rax, {var}')
 		else:
 			clause, size = varinfo(var, flags = GET_CLAUSE|GET_NBYTES)
 			output(f'mov rax, {clause}')
 		for uni in reversed(uni_chain[:-1]):
-			if uni.isidentifier(): enc_op = uni
-			else: enc_op = fun_encode(label, unary[uni])
 			call_function(enc_op, ('$a',), reg_sizes = [size])
 			label = get_call_label(enc_op)
 			size = label_size(label)
 		# if <arg of bin_op>.size != label_size(label):
 		# 	err('TypeError: Size mismatch for binary operator.')
 
-		if bin_op:
 			call_function(bin_op, ('$a', '$c'),
 				reg_sizes = [size, label_size(b_label)])
+		if bin_op is not None:
 			b_label = get_call_label(bin_op)
 		elif uni_chain: b_label = get_call_label(uni_chain[0])
-		else: b_label = v_label
+		else: b_label = label
 
-		cast = None
+		label = None
 		bin_op = True
 		uni_chain = []
 
@@ -533,20 +533,21 @@ for line_no, line in enumerate(infile, 1):
 		# 	elif token == '.': op = False
 		# 	elif op == False: op = token
 
-	# just assignment or no op
-	# for no op (and for asignment also maybe?) check `label is None`
-	if not dest:
-		if subject: output(f';{line_no}: no op {subject}')
-	elif not subject: err('SyntaxError: Expected an expression.')
-	elif subject.isdigit():
-		output(f'\n;{line_no}:', line.strip())
-		assign(dest, imm = subject)
-	else:
-		sclause, sreg = varinfo(subject, flags = GET_CLAUSE|GET_REG)
-		output(f'mov {sreg}, {sclause}')
-		assign(dest)
+	# for no op (and for assignment also maybe?) check `label is None`
+	if not dest: continue
+	elif not exp: err('SyntaxError: Expected an expression.')
+	else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
+	output()
 
 if debug: # print all variables
 	output('push rbp')
-	for var in variables: insert_snippet('_dprint', (var.name,))
+	for var in variables.values():
+		if not var.size_n: var.size_n = 6 # not going to use again
+		output(f'mov {get_reg(arg_regs[0], 6)}, _name_{var.name}')
+		output(f'mov {get_reg(arg_regs[1], 5)}, 0')
+		output(f'mov {get_reg(arg_regs[1], var.size_n)}, {var.get_clause()}')
+		output('xor rax, rax')
+		output('call printf')
 	output('pop  rbp')
+
+insert_snippet('_exit')
