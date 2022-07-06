@@ -1,3 +1,9 @@
+;; Snippet definitions start at a line with the following format (;; is for comment, ignore)
+;; ; <snippet name> <return label> <args>
+;; And will end at a line with a lone semicolon ;
+;; ;
+;; That's why comments in this file start with two ;; to prevent the parser from getting confused.
+
 ;; Available for only variables:
 ;; %1r:   for raw name (as in the source code)
 ;; %1e:   for the encoded name (as in the assembly file)
@@ -5,7 +11,7 @@
 
 ;; Available for both variables and registers:
 ;; %1s:   for size ('byte', 'word' etc.)
-;; %1c:   for clause (short for %1s [%1e])
+;; %1C:   for clause (short for %1s [%1e])
 ;; %1n:   for size as number of bytes
 ;; %1a-d: for corresponding register of unit size
 
@@ -16,6 +22,7 @@
 ; _header void
 extern printf
 extern malloc
+extern exit
 global main
 ;
 
@@ -26,36 +33,63 @@ _c: db 0, 0
 _ln: db 0, 10, 0
 ;
 
-; _udprint void s
-mov  rsi, %0e
-mov  rdi, _name_%0r
+; _dprint_lnxs void 8
+mov  rsi, _name_%0r
+mov  rdi, qword [%0e]
 xor  rax, rax
 call printf
 ;
 
+; _dprint_wins void 8
+mov  rcx, _name_%0r
+mov  rdx, qword [%0e]
+xor  rax, rax
+call printf
+;
+
+; _dprint_lnx void 8
+mov  rsi, _name_%0r
+mov  rdi, qword [%0e]
+xor  rax, rax
+call printf
+;
+
+; _dprint_win void 8
+mov  rcx, _name_%0r
+mov  rdx, qword [%0e]
+xor  rax, rax
+call printf
+;
+
+; _exit void
+xor rcx, rcx
+push rbp
+call exit
+;
+
 ; _udneg $s s
-mov %sa, %0c
-neg %sa
+mov %0a, %0C
+neg %0a
 ;
 
 ; _udadd $s s s
-mov %sa, %0
-add %sa, %1
+mov %0a, %0C
+add %0a, %1C
 ;
 
 ; _udsub $s s s
-mov %sa, %0c
-sub %sa, %1c
+mov %0a, %0C
+sub %0a, %1C
 ;
 
 ; _udmul $s s s
-mov %sa, %0c
-mul %1c
+mov %0a, %0C
+mul %1C
 ;
 
-; 6_dderef $e 8
+; _pdderef $e 8
 mov rax, qword [%0e]
-mov %ea, %es [%0]
+mov %ea, %es [%0a]
 ;
 
 ; _udref *$s s

@@ -1,3 +1,3 @@
 *3pointer
-pointer = 5
-printnum(pointer)
+3val = 79
+pointer = &val
