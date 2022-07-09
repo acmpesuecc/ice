@@ -62,14 +62,14 @@ class Patterns:
 	equal = re.compile(r'(?<!=)=(?!=)')
 	empty = re.compile(r'\[\][3-6]')
 
-	shape = r'(?:(?:\[\d+\])*|\[\]|\*)'
+	shape = r'(?:(?:\[\d+\])*|\[\]|\**)'
 	unit  = r'(?:[3-6]|[A-Za-z_]\w*)' # add tuple support
 	label = rf'{shape}{unit}'
 	decl  = re.compile(rf'(@({label})\s+|{shape}[3-6])([A-Za-z_]\w*)')
 	dest  = re.compile(rf'(@{label}\s+|{shape}[3-6])?(\**)([A-Za-z_]\w*)'
 			r'(?:\[([A-Za-z_]\w*|\d+)\])?')
-	token = re.compile(rf'@(?P<label>{label})|\d+|(?P<subject>[a-zA-Z_]\w*)\s*'
-		r'(?:(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
+	token = re.compile(rf'@(?P<label>{label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
+		r'(?:\s*(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
 		r'\[(?P<item>.*?)\]' ')?|'
 		r'(?P<symbol>\S)')
 
@@ -78,7 +78,7 @@ class Patterns:
 
 	default = re.compile(r'(?P<param>(?P<int>[3-6])|(?:(?P<arr>\[\d+\])|\*))'
 			# (?#|[3-6])))
-			r'(?P<element>(?:_?\w)*?)_(?P<method>[dm]\w*)')
+			rf'(?P<element>{shape}(?:_?\w)*?)_(?P<method>[dm]\w*)')
 
 class Variable:
 	def __init__(self, label, name):
@@ -96,7 +96,7 @@ class Variable:
 
 	def encode(self):
 		# enc_name = self.name.replace('_', '__')
-		return '$'+enc_name
+		return '$'+self.name
 
 	def get_label(self):
 		return self.labels[-1]
@@ -247,9 +247,9 @@ def get_arg_labels(enc_op):
 	return functions[enc_op][1:] # (ret_label, *arg_labels)
 
 def get_var(name, label = None):
-	if name.isdigit(): return Literal(name, label or '6')
+	if name.isdigit(): return Literal(label or '6', name)
 	if name not in variables: err(f'NameError: {name!r} not defined.')
-	return variables[var]
+	return variables[name]
 
 
 # TODO?: `Snippet` class
@@ -586,7 +586,7 @@ for line_no, line in enumerate(infile, 1):
 		# Decode token
 		args = []
 		enc_op = None
-		if token['args']:
+		if token['args'] is not None:  # required for empty arg lists
 			if not token['method']: enc_op = fun_encode('', token['subject'])
 			else:
 				var = get_var(token['subject'])
@@ -605,10 +605,13 @@ for line_no, line in enumerate(infile, 1):
 			args.extend([var, index])
 		else:
 			var = get_var(token['subject'], label)
-			if uni_chain: enc_op = uni_chain.pop(); args.append(var)
+			label = var.get_label()
+
+		uni_fill(uni_chain, label)
 
 		# Call suffixes and uni_chain.
 		if enc_op is not None: call_function(enc_op, args)
+		elif uni_chain: call_function(uni_chain.pop(), (var,))
 		else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
 		for enc_op in reversed(uni_chain):
 			call_function(enc_op, (Register(label, 'a'),))
@@ -618,8 +621,8 @@ for line_no, line in enumerate(infile, 1):
 			arg_labels = get_arg_labels(bin_op)
 			if len(arg_labels) != 2: err('TypeError: '
 				f'{bin_op!r} does not take 2 arguments')
-			if label_size(arg_labels[1]) < label_size(label):
-				err(f'TypeError: Incompatible size for {bin_op!r}')
+			# if label_size(arg_labels[1]) < label_size(label):
+			# 	err(f'TypeError: Incompatible size for {bin_op!r}')
 			call_function(bin_op,
 				(Register(b_label, 'a'), Register(label, 'c')))
 			b_label = get_call_label(bin_op)

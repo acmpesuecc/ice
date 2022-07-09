@@ -11,7 +11,7 @@
 
 ;; Available for both variables and registers:
 ;; %1S:   for size ('byte', 'word' etc.)
-;; %1C:   for clause (short for %1S [%1E])
+;; %1C:   for clause (same as %1S [%1E] if variable, otherwise %1E)
 ;; %1N:   for size as number of bytes
 ;; %1U:   for size of a unit in bytes
 ;; %1a-d: for corresponding register of unit size
@@ -73,6 +73,11 @@ mov %0a, %0C
 neg %0a
 ;
 
+; _udinvert $s s
+mov %0a, %0C
+not %0a
+;
+
 ; _udadd $s s s
 mov %0a, %0C
 add %1a, %1C
@@ -104,7 +109,7 @@ mov %0d, %0a
 ;
 
 ; _pdderef $e 6
-mov rax, qword [%0E]
+mov rax, %0C
 mov %ea, %eS [%0a]
 ;
 
@@ -115,6 +120,10 @@ mov %1S [rcx], %1a
 ;
 
 ; _udref *$s s
+mov rax, %0E
+;
+
+; _pdref *$s s
 mov rax, %0E
 ;
 
