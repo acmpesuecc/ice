@@ -4,15 +4,16 @@
 ;; ;
 ;; That's why comments in this file start with two ;; to prevent the parser from getting confused.
 
-;; Available for only variables:
-;; %1r:   for raw name (as in the source code)
-;; %1e:   for the encoded name (as in the assembly file)
-;; %1l:   for length of the array (1 for non-array variables)
+;; Available only for variables:
+;; %1R:   for raw name (as in the source code)
+;; %1E:   for the encoded name (as in the assembly file)
+;; %1L:   for length of the array (1 for non-array variables)
 
 ;; Available for both variables and registers:
-;; %1s:   for size ('byte', 'word' etc.)
-;; %1C:   for clause (short for %1s [%1e])
-;; %1n:   for size as number of bytes
+;; %1S:   for size ('byte', 'word' etc.)
+;; %1C:   for clause (short for %1S [%1E])
+;; %1N:   for size as number of bytes
+;; %1U:   for size of a unit in bytes
 ;; %1a-d: for corresponding register of unit size
 
 ;; the number after the % sign is the index of the argument (zero indexed)
@@ -33,30 +34,30 @@ _c: db 0, 0
 _ln: db 0, 10, 0
 ;
 
-; _dprint_lnxs void 8
-mov  rsi, _name_%0r
-mov  rdi, qword [%0e]
+; _dprint_lnxs void 6
+mov  rsi, _name_%0R
+mov  rdi, qword [%0E]
 xor  rax, rax
 call printf
 ;
 
-; _dprint_wins void 8
-mov  rcx, _name_%0r
-mov  rdx, qword [%0e]
+; _dprint_wins void 6
+mov  rcx, _name_%0R
+mov  rdx, qword [%0E]
 xor  rax, rax
 call printf
 ;
 
-; _dprint_lnx void 8
-mov  rsi, _name_%0r
-mov  rdi, qword [%0e]
+; _dprint_lnx void 6
+mov  rsi, _name_%0R
+mov  rdi, qword [%0E]
 xor  rax, rax
 call printf
 ;
 
-; _dprint_win void 8
-mov  rcx, _name_%0r
-mov  rdx, qword [%0e]
+; _dprint_win void 6
+mov  rcx, _name_%0R
+mov  rdx, qword [%0E]
 xor  rax, rax
 call printf
 ;
@@ -74,12 +75,12 @@ neg %0a
 
 ; _udadd $s s s
 mov %0a, %0C
-add %0a, %1C
+add %1a, %1C
 ;
 
 ; _udsub $s s s
 mov %0a, %0C
-sub %0a, %1C
+sub %1a, %1C
 ;
 
 ; _udmul $s s s
@@ -87,58 +88,88 @@ mov %0a, %0C
 mul %1C
 ;
 
-; _pdderef $e 8
-mov rax, qword [%0e]
-mov %ea, %es [%0a]
+; _udtruediv $s s s
+xor rax, rax
+xor rdx, rdx
+mov %0a, %0C
+div %1C
+;
+
+; _udmod $s s s
+xor rax, rax
+xor rdx, rdx
+mov %0a, %0C
+div %1C
+mov %0d, %0a
+;
+
+; _pdderef $e 6
+mov rax, qword [%0E]
+mov %ea, %eS [%0a]
+;
+
+; _pdsetat void 6 e
+mov rcx, %0C
+mov %1a, %1C
+mov %1S [rcx], %1a
 ;
 
 ; _udref *$s s
-mov rax, %0e
+mov rax, %0E
 ;
 
 ; _adgetitem $e e
-mov %1a, %1
-mov %0a, %0s [eax * %0n + %0e]
+mov %1a, %1C
+mov %0a, %0S [eax * %0U + %0E]
 ;
 
-; _adsetitem void 
-mov %1b, %1
-mov %0s [%1b * %0n + %0e], %0a
+; _adsetitem void s 6 e
+xor rbx, rbx
+mov %1b, %1C
+mov %2a,  %2C
+mov %2S [rbx * %0U + %0E], %2a
 ;
 
-; printnum void
-xor eax, eax
-xor %1a, %1
-push eax
-push _p
-call _printf
-add esp, 8
+; printnum void 6
+xor rdx, rdx
+xor %0d, %0C
+xor rax, rax
+mov rcx, _p
+push rbp
+call printf
+pop rbp
 ;
 
-; print void
-mov bl, byte [(%1l*%1n) + (%1e-1)]
-mov byte [(%1l*%1n) + (%1e-1)], 0
-push %1e
-call _printf
-add esp, 4
-mov byte [(%1l*%1n) + (%1e-1)], bl
+; print void 6
+;; print void 6
+mov bl, byte [%0L*%0U + %0E - 1]
+mov byte [%0L*%0U + %0E - 1], 0
+mov rcx, %0E
+push rbp
+call printf
+pop rbp
+mov byte [%0L*%0U + %0E - 1], bl
 
 mov byte [_c], bl
-push _c
-call _printf
-add esp, 4
+mov rcx, _c
+push rbp
+call printf
+pop rbp
 ;
 
-; println void
-mov bl, byte [(%1l*%1n) + (%1e-1)]
-mov byte [(%1l*%1n) + (%1e-1)], 0
-push %1e
-call _printf
-add esp, 4
-mov byte [(%1l*%1n) + (%1e-1)], bl
+; println void 6
+;; println void 6
+mov bl, byte [%0L*%0U + %0E - 1]
+mov byte [%0L*%0U + %0E - 1], 0
+mov rcx, %0E
+push rbp
+call printf
+pop rbp
+mov byte [%0L*%0U + %0E - 1], bl
 
 mov byte [_ln], bl
-push _ln
-call _printf
-add esp, 4
+mov rcx, _ln
+push rbp
+call printf
+pop rbp
 ;

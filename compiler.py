@@ -46,6 +46,7 @@ binary = {
 	'+' : '__add__',
 	'-' : '__sub__',
 	'*' : '__mul__',
+	'%' : '__mod__',
 	'/' : '__truediv__',
 	# '//': '__floordiv__',
 	# '**': '__pow__',
@@ -64,13 +65,16 @@ class Patterns:
 	shape = r'(?:(?:\[\d+\])*|\[\]|\*)'
 	unit  = r'(?:[3-6]|[A-Za-z_]\w*)' # add tuple support
 	label = rf'{shape}{unit}'
-	token = re.compile(rf'@({label})|\d+|[a-zA-Z_]\w*|(\S)')
 	decl  = re.compile(rf'(@({label})\s+|{shape}[3-6])([A-Za-z_]\w*)')
 	dest  = re.compile(rf'(@{label}\s+|{shape}[3-6])?(\**)([A-Za-z_]\w*)'
-			r'(?:\[([A-Za-z_]\w*)\])?')
+			r'(?:\[([A-Za-z_]\w*|\d+)\])?')
+	token = re.compile(rf'@(?P<label>{label})|\d+|(?P<subject>[a-zA-Z_]\w*)\s*'
+		r'(?:(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
+		r'\[(?P<item>.*?)\]' ')?|'
+		r'(?P<symbol>\S)')
 
 	stmt  = re.compile(r'(([\'"])(\\?.)*?\2|[^#])*')
-	snip  = re.compile(r'(?i)%(\d+|e)([a-z])?\b')
+	snip  = re.compile(r'%(\d+|e)([RELSCNU]|(?P<reg>[sd]i|[ibs]p|[a-d]))?\b')
 
 	default = re.compile(r'(?P<param>(?P<int>[3-6])|(?:(?P<arr>\[\d+\])|\*))'
 			# (?#|[3-6])))
@@ -81,16 +85,17 @@ class Variable:
 		self.name = name
 		self.init = None
 		self.size = label_size(label)
-		self.size_n = self.size.bit_length()+2
-		self.enc_name = self.var_encode()
+		if self.size in {1, 2, 4, 8}: self.size_n = self.size.bit_length()+2
+		else: self.size_n = 0
+		self.enc_name = self.encode()
 		self.labels = [label]
 
 	def __repr__(self):
 		return f'{type(self).__name__}(@{self.get_label()} {self.name}, '\
-			f'size = {self.size})'
+			f'size = {self.size}, size_n = {self.size_n})'
 
-	def var_encode(self):
-		enc_name = self.name.replace('_', '__')
+	def encode(self):
+		# enc_name = self.name.replace('_', '__')
 		return '$'+enc_name
 
 	def get_label(self):
@@ -100,12 +105,12 @@ class Variable:
 		return f'{size_list[self.size_n]} [{self.enc_name}]'
 
 class Register(Variable):
-	def var_encode(self):
+	def encode(self):
 		return get_reg(self.name, self.size_n)
-	def get_clause(self, unit = False): return self.var_encode()
+	def get_clause(self, unit = False): return self.encode()
 
 class Literal(Variable):
-	def var_encode(self): return self.name
+	def encode(self): return self.name
 	def get_clause(self, unit = False): return self.name
 
 def err(msg):
@@ -132,11 +137,11 @@ def get_reg(reg: r'[abcd]|[ds]i|[sbi]p', size_n):
 		return l+reg+r
 
 	if reg.startswith('r'):
-		if size == 8: return reg
+		if size_n == 6: return reg
 		return reg+'bwd'[size_n-3]
 
-	if size == 1: return reg+'l'
-	if size == 2: return reg
+	if size_n == 3: return reg+'l'
+	if size_n == 4: return reg
 	return 'er'[size_n-5]+reg
 
 labels = {}
@@ -165,6 +170,8 @@ def element_size(label):
 def fun_encode(label, op):
 	# check if label has that method?
 	enc_op = op.replace('_', '__')
+	if not label: return enc_op
+
 	if len(op.lstrip('_'))+2 <= len(op) >= len(op.rstrip('_'))+2:
 		enc_op = '_d'+enc_op[4:-4]
 	else: enc_op = '_m'+enc_op
@@ -213,7 +220,8 @@ def declare(label, name, init = None):
 		var.init = init
 
 def get_snippet_label(enc_name, p, e): # use this if you know it's a snippet
-	seek, ret_label, sizes = snippets[enc_name]
+	seek, ret_label, arg_labels = snippets[enc_name]
+	if e is None: return ret_label
 	return ret_label.replace('$e', e).replace('$s', p+e)
 
 def get_call_label(enc_op): # this works for any enc_op
@@ -225,20 +233,23 @@ def get_call_label(enc_op): # this works for any enc_op
 	# Is it possible for snippet encode to run if enc_op in functions?
 	if enc_op not in functions:
 		err(f'NameError: function {enc_op!r} not defined.')
-	return functions[enc_op][0] # (ret_label, *arg_sizes)
+	return functions[enc_op][0] # (ret_label, *arg_labels)
 
-def get_call_sizes(enc_op):
-	print(f'Requested label of enc_op {enc_op!r}')
-
+def get_arg_labels(enc_op):
 	enc_op, p, e = snippet_encode(enc_op)
 	if enc_op in snippets:
-		seek, ret_label, sizes = snippets[enc_op]
-		return decode_snippet_args(sizes, p, e)
+		seek, ret_label, arg_labels = snippets[enc_op]
+		return decode_snippet_args(arg_labels, p, e)
 
 	# Is it possible for snippet encode to run if enc_op in functions?
 	if enc_op not in functions:
 		err(f'NameError: function {enc_op!r} not defined.')
-	return functions[enc_op][1:] # (ret_label, *arg_sizes)
+	return functions[enc_op][1:] # (ret_label, *arg_labels)
+
+def get_var(name, label = None):
+	if name.isdigit(): return Literal(name, label or '6')
+	if name not in variables: err(f'NameError: {name!r} not defined.')
+	return variables[var]
 
 
 # TODO?: `Snippet` class
@@ -254,27 +265,26 @@ def snippet_encode(name):
 
 	return enc_name, match['param'], match['element']
 
-def decode_snippet_args(sizes: list[str], p, e):
-	sizes = sizes.copy()
+def decode_snippet_args(arg_labels, p, e) -> list[str]:
+	arg_labels = arg_labels.copy()
 
 	# TODO: add support for dynamic arrays
-	if e: p = int(p[1:-1]); e = str(label_size(e))
-	elif p == '*': p = 8
-	else: p = 1<<max(0, int(p)-3)
-	for i, size in enumerate(sizes):
-		if   size == 's': sizes[i] = p
-		elif size == 'e': sizes[i] = e
-		else: sizes[i] = int(size)
 
-	return sizes
+	if p == '*': p = '6'
+	elif e: p = int(p[1:-1]); e = str(label_size(e))
+	for i, size_n in enumerate(arg_labels):
+		if   size_n == 's': arg_labels[i] = p
+		elif size_n == 'e': arg_labels[i] = e
+		else: arg_labels[i] = size_n
+
+	return arg_labels
 
 def insert_snippet(enc_name, args = (), p = None, e = None, match_args = True):
-	seek, ret_label, sizes = snippets[enc_name]
+	seek, ret_label, arg_labels = snippets[enc_name]
 	# if p:
 	# ret_label = ret_label.replace('$e', e).replace('$s', p+e)
-	# sizes, seek = snippet_setup(enc_name, args, p, e)
-	if p: sizes = decode_snippet_args(sizes, p, e)
-	else: sizes = [int(size) for size in sizes]
+	# arg_labels, seek = snippet_setup(enc_name, args, p, e)
+	if p: arg_labels = decode_snippet_args(arg_labels, p, e)
 
 	# What if an argument is in c and another in a?
 	# And I want to move a into c, then use the first argument.
@@ -282,15 +292,17 @@ def insert_snippet(enc_name, args = (), p = None, e = None, match_args = True):
 	sfile.seek(seek)
 	for line in sfile:
 		if line in (';', ';\n'): break
+		dline = line.strip()
 
 		offset = 0
 		for match in Patterns.snip.finditer(line):
 			start, end = match.span()
 			start += offset
 			end   += offset
-			if match[1] == 'e': label = e
+			if match[1] == 'e': label = e; arg = Literal(label, '0')
 			else:
 				n = int(match[1])
+
 				arg = args[n]
 
 				label = arg.get_label()
@@ -298,15 +310,16 @@ def insert_snippet(enc_name, args = (), p = None, e = None, match_args = True):
 
 			if not tail:
 				print(f'File "{sfile.name}", in {enc_name}')
-				err(f'Error: tail required in {line.strip()!r}')
-			elif tail == 'r': sub = arg.name
-			elif tail == 'e': sub = arg.enc_name
-			elif tail == 'l': sub = str(get_length(label))
+				err(f'Error: tail required in {dline!r}')
+			elif tail == 'R':  sub = arg.name
+			elif tail == 'E':  sub = arg.enc_name
+			elif tail == 'L':  sub = str(get_length(label))
 
-			elif tail == 's': sub = size_list[arg.size_n]
-			elif tail == 'C': sub = arg.get_clause()
-			elif tail == 'n': sub = str(label_size(label))
-			elif tail in 'abcd': sub = get_reg(tail, arg.size_n)
+			elif tail == 'S':  sub = size_list[arg.size_n]
+			elif tail == 'C':  sub = arg.get_clause()
+			elif tail == 'N':  sub = str(label_size(label))
+			elif tail == 'U':  sub = str(element_size(label))
+			elif match['reg']: sub = get_reg(tail, arg.size_n)
 			else: continue
 
 			offset += len(sub)-len(match[0])
@@ -340,11 +353,11 @@ def call_function(enc_op, args : tuple[Variable] = ()):
 	if enc_op not in functions:
 		err(f'NameError: Function {enc_op!r} not defined.')
 
-	sizes = functions[enc_op][1:]
+	arg_labels = functions[enc_op][1:]
 
 	# TODO: plural
-	if len(args) != len(sizes):
-		err(f'TypeError: {enc_op!r} takes exactly {len(sizes)} arguments '
+	if len(args) != len(arg_labels):
+		err(f'TypeError: {enc_op!r} takes exactly {len(arg_labels)} arguments '
 			f'({len(args)} given)')
 
 	offset = -3
@@ -372,26 +385,28 @@ def assign(dest, imm: Variable = None):
 
 	if dest.isdigit(): err("SyntaxError: Can't assign to literal.")
 
-	if dest not in variables: err(f'NameError: {dest!r} is not declared.')
+	if dest not in variables: err(f'NameError: {dest!r} not declared.')
 	dest = variables[dest]
 
 	if index:
-		if deref: err("SyntaxError: Can't perform multiple operations yet.")
-		if index.isdigit(): index = Literal('6', index)
-		elif index not in variables: err(f'NameError: {index!r} not declared.')
-		index = variables[index]
-
+		if deref: err("SyntaxError: Can't assign to multiple operations yet.")
 		fun = fun_encode(dest.get_label(), '__setitem__')
-		label = get_call_sizes(fun)[2]
-		call_function(fun, (dest, index, imm or Register(label, 'a')))
+		arg_labels = get_arg_labels(fun)
+		print(f'{fun = }, {arg_labels = }, {index = }')
+		
+		if index.isdigit(): index = Literal(arg_labels[1], index)
+		elif index not in variables: err(f'NameError: {index!r} not declared.')
+		else: index = variables[index]
+
+		call_function(fun, (dest, index, imm or Register(arg_labels[2], 'a')))
 		return
 
 	# Use __setat__ when * in dest
 	if len(deref) > 2:
-		err("SyntaxError: Can't perform multiple dereferences yet.")
+		err("SyntaxError: Can't assign to multiple dereferences yet.")
 	if deref:
 		fun = fun_encode(dest.get_label(), '__setat__')
-		label = get_call_sizes(fun)[1]
+		label = get_arg_labels(fun)[1]
 		call_function(fun, (dest, imm or Register(label, 'a')))
 		return
 
@@ -405,8 +420,8 @@ tell = 0
 for line_no, line in enumerate(sfile, 1):
 	tell += len(line)+CR_offset
 	if not line.startswith('; '): continue
-	enc_name, ret_label, *sizes = line[2:].split()
-	snippets[enc_name] = (tell, ret_label, sizes)
+	enc_name, ret_label, *arg_labels = line[2:].split()
+	snippets[enc_name] = (tell, ret_label, arg_labels)
 # starts at a line starting with '; ' (mind the space)
 # ends at a line with just ';' (refer `insert_snippet()`)
 
@@ -516,11 +531,6 @@ for var in variables.values():
 if debug and not inits: print(None)
 if debug: print()
 
-for var in variables.values():
-	# if var.init: output(f'_name_{var.name}: db `{var.name}: %s\\n`, 0')
-	# else:
-		output(f'_name_{var.name}: db `{var.name}: %lld\\n`, 0')
-
 # Writing to the text segment
 
 infile.seek(0)
@@ -552,54 +562,64 @@ for line_no, line in enumerate(infile, 1):
 			bin_op = fun_encode(b_label, binary[token[0]])
 			continue
 
-		if token[2]: # Expecting unary. Got some symbol.
-			if token[2] in '["\'':
+		if token['symbol']: # Expecting unary. Got some symbol.
+			if token['symbol'] in '["\'':
 				if bin_op or uni_chain: err('SyntaxError: '
 					'Operations not yet supported on sequence literals.')
 				if not isdecl: err('SyntaxError: Sequence literals '
 					'not yet supported outside declaration.')
 				dest = None; break # sequence literals initialise right now
-			if token[2] not in unary:
+			if token['symbol'] not in unary:
 				err('SyntaxError: Invalid unary operator.')
-			uni_chain.append(token[2])
+			uni_chain.append(token['symbol'])
 			label = None
 			continue
 
-		if token[1]: label = token[1]; uni_fill(uni_chain, label); continue
-		
+		if token['label']:
+			label = token['label']; uni_fill(uni_chain, label); continue
+
 
 		if uni_chain:
 			assert label or not uni_chain[-1].isidentifier()
 			assert not label or uni_chain[-1].isidentifier()
 
-		if token[0].isdigit(): label = label or '6'
-		else: label = label or variables[token[0]].get_label()
-
-		uni_fill(uni_chain, label)
-
-		# bin_op here is either a name or None, never True
-		if bin_op is not None: output('mov rcx, rax')
-
-		var = token[0]
-		if uni_chain:
-			if var not in variables:
-				err(f'NameError: {var!r} not declared.')
-			var = variables[var]
-			call_function(uni_chain[-1], (var,))
-			size = label_size(get_call_label(uni_chain[-1]))
-		elif var.isdigit(): size = 8; output(f'mov rax, {var}')
-		elif var not in variables: err(f'NameError: {var!r} not declared.')
+		# Decode token
+		args = []
+		enc_op = None
+		if token['args']:
+			if not token['method']: enc_op = fun_encode('', token['subject'])
+			else:
+				var = get_var(token['subject'])
+				args.append(var)
+				enc_op = fun_encode(var.get_label(), token['method'])
+			label = get_call_label(enc_op)
+			arg_labels = get_arg_labels(enc_op)[len(args):]
+			for arg, arg_label in zip(token['args'].split(','), arg_labels):
+				args.append(get_var(arg.strip(), arg_label))
+		elif token['item']:
+			var = get_var(token['subject'])
+			enc_op = fun_encode(var.get_label(), '__getitem__')
+			label = get_call_label(enc_op)
+			index_label = get_arg_labels(enc_op)[1]
+			index = get_var(token['item'], index_label)
+			args.extend([var, index])
 		else:
-			var = variables[var]
-			output(f"mov {get_reg('a', var.size_n)}, {var.get_clause()}")
-		for enc_op in reversed(uni_chain[:-1]):
+			var = get_var(token['subject'], label)
+			if uni_chain: enc_op = uni_chain.pop(); args.append(var)
+
+		# Call suffixes and uni_chain.
+		if enc_op is not None: call_function(enc_op, args)
+		else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
+		for enc_op in reversed(uni_chain):
 			call_function(enc_op, (Register(label, 'a'),))
 			label = get_call_label(enc_op)
-			size = label_size(label)
-		# if <arg of bin_op>.size != label_size(label):
-		# 	err('TypeError: Size mismatch for binary operator.')
 
 		if bin_op is not None:
+			arg_labels = get_arg_labels(bin_op)
+			if len(arg_labels) != 2: err('TypeError: '
+				f'{bin_op!r} does not take 2 arguments')
+			if label_size(arg_labels[1]) < label_size(label):
+				err(f'TypeError: Incompatible size for {bin_op!r}')
 			call_function(bin_op,
 				(Register(b_label, 'a'), Register(label, 'c')))
 			b_label = get_call_label(bin_op)
@@ -610,27 +630,10 @@ for line_no, line in enumerate(infile, 1):
 		bin_op = True
 		uni_chain = []
 
-		# TODO:
-		# 	if   token[0] == '(': op = '__call__'
-		# 	elif token[0] == '[': op = '__getitem__'
-		# 	elif token == '.': op = False
-		# 	elif op == False: op = token
-
 	# for no op (and for assignment also maybe?) check `label is None`
 	if not dest: continue
 	elif not exp: err('SyntaxError: Expected an expression.')
 	else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
 	output()
-
-if debug: # print all variables
-	output('push rbp')
-	for var in variables.values():
-		if not var.size_n: var.size_n = 6 # not going to use again
-		output(f'mov {get_reg(arg_regs[0], 6)}, _name_{var.name}')
-		output(f'mov {get_reg(arg_regs[1], 5)}, 0')
-		output(f'mov {get_reg(arg_regs[1], var.size_n)}, {var.get_clause()}')
-		output('xor rax, rax')
-		output('call printf')
-	output('pop  rbp')
 
 insert_snippet('_exit')
