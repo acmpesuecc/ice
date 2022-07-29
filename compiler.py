@@ -2,10 +2,13 @@
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
 from sys import argv
-debug = False
-if '-d' in argv: debug = True; argv.remove('-d')
+
+if __name__ != '__main__': debug = True
+elif '-d' in argv: debug = True; argv.remove('-d')
+else: debug = False
+
 if len(argv) <2:
-	if debug: argv.append('Tests\\refacor tester.ice')
+	if debug: argv.append('Tests\\refactor tester.ice')
 	else: print('Input file not specified'); quit(1)
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
@@ -204,7 +207,6 @@ def fun_encode(label, op):
 
 	label  = label.replace('_', '__')
 	enc_op = label+enc_op
-	if debug: print(f'fun_encode({label!r}, {op!r}) -> {enc_op!r}')
 	return enc_op
 
 def declare(label, name, init = None):
@@ -454,7 +456,7 @@ for line_no, line in enumerate(sfile, 1):
 if debug: print('BUILTINS: ', *snippets)
 
 
-if __name_ == '__main__':
+if __name__ == '__main__':
 	insert_snippet('_header')
 
 	# Writing to bss segment
