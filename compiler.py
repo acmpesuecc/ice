@@ -5,7 +5,7 @@ from sys import argv
 debug = False
 if '-d' in argv: debug = True; argv.remove('-d')
 if len(argv) <2:
-	if debug: argv.append('Examples\\hello.ice')
+	if debug: argv.append('Tests\\refactor tester.ice')
 	else: print('Input file not specified'); quit(1)
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
