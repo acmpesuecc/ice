@@ -5,7 +5,7 @@ from sys import argv
 debug = False
 if '-d' in argv: debug = True; argv.remove('-d')
 if len(argv) <2:
-	if debug: argv.append('Tests\\refactor tester.ice')
+	if debug: argv.append('Tests\\refacor tester.ice')
 	else: print('Input file not specified'); quit(1)
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
@@ -54,6 +54,32 @@ binary = {
 	# '>>': '__rshift__',
 }
 
+if debug:
+	class Debug:
+		@staticmethod
+		def get_snippets(): return snippets
+		@staticmethod
+		def get_variables(): return variables
+		@staticmethod
+		def get_infile(): return infile
+		@staticmethod
+		def get_outfile(): return output.__kwdefaults__["file"]
+		@staticmethod
+		def get_sfile(): return sfile
+
+		@staticmethod
+		def set_snippets(new_snippets): global snippets; snippets = new_snippets
+		@staticmethod
+		def set_variables(new_variables): global variables; variables = new_variables
+		@staticmethod
+		def set_infile(new_infile): global infile; infile = new_infile
+		@staticmethod
+		def set_sfile(new_sfile): global sfile; sfile = new_sfile
+		@staticmethod
+		def set_output_file(new_outfile):
+			global output
+			def output(*args, file = new_outfile, **kwargs):
+				print(*args, **kwargs, file = file)
 
 import re
 class Patterns:
@@ -225,7 +251,7 @@ def get_snippet_label(enc_name, p, e): # use this if you know it's a snippet
 	return ret_label.replace('$e', e).replace('$s', p+e)
 
 def get_call_label(enc_op): # this works for any enc_op
-	print(f'Requested label of enc_op {enc_op!r}')
+	if debug: print(f'Requested label of enc_op {enc_op!r}')
 
 	enc_op, p, e = snippet_encode(enc_op)
 	if enc_op in snippets: return get_snippet_label(enc_op, p, e)
@@ -427,216 +453,226 @@ for line_no, line in enumerate(sfile, 1):
 
 if debug: print('BUILTINS: ', *snippets)
 
-insert_snippet('_header')
 
-# Writing to bss segment
+if __name_ == '__main__':
+	insert_snippet('_header')
 
-output('\nsegment .bss')
-for line_no, line in enumerate(infile, 1):
-	stmt = Patterns.stmt.match(line)[0].strip()
-	lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
-	lhs = lhs.strip()
-	decls = lhs.split()
-	decl = Patterns.decl.match(lhs)
+	# Writing to bss segment
 
-	if not decl: continue
+	output('\nsegment .bss')
+	for line_no, line in enumerate(infile, 1):
+		stmt = Patterns.stmt.match(line)[0].strip()
+		lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
+		lhs = lhs.strip()
+		decls = lhs.split()
+		decl = Patterns.decl.match(lhs)
 
-	if not rhs:
-		if decl[2]:
-			label = lhs.split()[0][1:]
-			for decl in decls[1:]:
-				decl = decl.strip()
-				declare(label, decl)
-		else:
-			for decl in decls:
-				decl = decl.strip()
-				match = Patterns.decl.match(decl)
-				if not match: err(f'SyntaxError: Expected a declaration token.')
-				label, name = match[1].strip(), match[3]
-				declare(label, name)
-		continue
+		if not decl: continue
 
-	if not lhs: err('SyntaxError: Assignment without destination.')
-	if len(decls) != 1 and not (decl[2] and len(decls) == 2):
-		err('SyntaxError: Assignment with multiple declarations')
-	var = decl[0]
-	size = element_size(decl[1])
-
-	rhs = rhs[0].strip()
-	end = False
-	# Clean this up. Must expect comma after each value.
-	if rhs[0] == '[': # TODO: robust syntax
-		init = bytearray()
-		for token in Patterns.wsep.split(rhs[1:]):
-			token = token.strip()
-			if not token: continue
-			if end: err('SyntaxError: Token found after array initialisation.')
-			if token.isdigit(): init.extend(int(token).to_bytes(size, 'big'))
-			elif token == ']': end = True
-			elif token != ',': err('SyntaxError: Invalid token'
-				f' {token!r} in array initialisation.')
-		if not end: err('SyntaxError: Multi-line arrays are not yet supported.')
-
-	elif rhs[0] in '"\'': # single char single quotes not yet char literal
-		# TODO: test robust syntax
-		init = bytearray()
-		s = rhs[0]
-		str_state = CHAR
-		for c in rhs[1:]:
-			if end: err('SyntaxError: Token found after string initialisation.')
-			elif str_state == ESCAPE:
-				str_state = CHAR
-				if c == 'x': str_state = HEX_ESCAPE; init.append(0)
-				elif c not in escape_sequences:
-					err(f'SyntaxError: Invalid escape character {c!r}.')
-				else: init.append(ord(escape_sequences[c]))
-			elif str_state == HEX_ESCAPE:
-				if not Patterns.hex.match(c):
-					err('SyntaxError: Expected hexadecimal character.')
-
-				if not init[-1]: init[-1] |= int(c, 16)<<4 | 15
-				else:
-					init[-1] = ~15&init[-1] | int(c, 16)
-					str_state = CHAR
-
-			elif c == '\\': str_state = ESCAPE
-			elif c == s: end = True
-			else: init.append(ord(c))
-		else:
-			if not end: err('SyntaxError: EOL while parsing string.')
-	else: init = None
-
-	var = var.strip()
-	match = Patterns.decl.match(var)
-	if not match: err(f'SyntaxError: Expected a declaration token.')
-	name = match[3]
-	label = match[2] or match[1]
-	declare(label, name, init = init)
-
-# Writing to the data segment
-
-if debug: print('VARIABLES:', *variables.values())
-
-output()
-insert_snippet('_data')
-if debug: print('\nINITS:'); inits = False
-for var in variables.values():
-	if not var.init: continue
-	if debug: print(var.name, '=', var.init); inits = True
-
-	output(var.enc_name, end = ': db ')
-	out = repr(var.init)[12:-2].replace('`', '\\`')
-	if '\\x' not in out: output(f'`{out}`')
-	else: output(*var.init, sep = ', ')
-if debug and not inits: print(None)
-if debug: print()
-
-# Writing to the text segment
-
-infile.seek(0)
-output('\nsegment .text')
-output('main:')
-for line_no, line in enumerate(infile, 1):
-	line = Patterns.stmt.match(line)[0]
-	dest, _, exp = line.rpartition('=')
-	dest = dest.strip()
-	exp  = exp.strip()
-
-	if not dest and Patterns.decl.match(exp): continue
-	# if debug: print(f'{line_no}:', line.strip())
-	isdecl = bool(Patterns.decl.match(dest))
-	# decl = True
-	uni_chain = []
-	args = []
-	label = None
-	b_label = None
-	bin_op  = None  # remembered for use after unary operations
-
-	# output(f'\n;{line_no}:', line.strip())
-
-	# expression lexing (mostly cleaned up)
-	for token in Patterns.token.finditer(exp):
-		if bin_op is True: # expecting a binary operator
-			if token[0] not in binary:
-				err('SyntaxError: Expected binary operator.')
-			bin_op = fun_encode(b_label, binary[token[0]])
-			continue
-
-		if token['symbol']: # Expecting unary. Got some symbol.
-			if token['symbol'] in '["\'':
-				if bin_op or uni_chain: err('SyntaxError: '
-					'Operations not yet supported on sequence literals.')
-				if not isdecl: err('SyntaxError: Sequence literals '
-					'not yet supported outside declaration.')
-				dest = None; break # sequence literals initialise right now
-			if token['symbol'] not in unary:
-				err('SyntaxError: Invalid unary operator.')
-			uni_chain.append(token['symbol'])
-			label = None
-			continue
-
-		if token['label']:
-			label = token['label']; uni_fill(uni_chain, label); continue
-
-
-		if uni_chain:
-			assert label or not uni_chain[-1].isidentifier()
-			assert not label or uni_chain[-1].isidentifier()
-
-		# Decode token
-		args = []
-		enc_op = None
-		if token['args'] is not None:  # required for empty arg lists
-			if not token['method']: enc_op = fun_encode('', token['subject'])
+		if not rhs:
+			if decl[2]:
+				label = lhs.split()[0][1:]
+				for decl in decls[1:]:
+					decl = decl.strip()
+					declare(label, decl)
 			else:
-				var = get_var(token['subject'])
-				args.append(var)
-				enc_op = fun_encode(var.get_label(), token['method'])
-			label = get_call_label(enc_op)
-			arg_labels = get_arg_labels(enc_op)[len(args):]
-			for arg, arg_label in zip(token['args'].split(','), arg_labels):
-				args.append(get_var(arg.strip(), arg_label))
-		elif token['item']:
-			var = get_var(token['subject'])
-			enc_op = fun_encode(var.get_label(), '__getitem__')
-			label = get_call_label(enc_op)
-			index_label = get_arg_labels(enc_op)[1]
-			index = get_var(token['item'], index_label)
-			args.extend([var, index])
-		else:
-			var = get_var(token['subject'], label)
-			label = var.get_label()
+				for decl in decls:
+					decl = decl.strip()
+					match = Patterns.decl.match(decl)
+					if not match:
+						err(f'SyntaxError: Expected a declaration token.')
+					label, name = match[1].strip(), match[3]
+					declare(label, name)
+			continue
 
-		uni_fill(uni_chain, label)
+		if not lhs: err('SyntaxError: Assignment without destination.')
+		if len(decls) != 1 and not (decl[2] and len(decls) == 2):
+			err('SyntaxError: Assignment with multiple declarations')
+		var = decl[0]
+		size = element_size(decl[1])
 
-		# Call suffixes and uni_chain.
-		if enc_op is not None: call_function(enc_op, args)
-		elif uni_chain: call_function(uni_chain.pop(), (var,))
-		else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
-		for enc_op in reversed(uni_chain):
-			call_function(enc_op, (Register(label, 'a'),))
-			label = get_call_label(enc_op)
+		rhs = rhs[0].strip()
+		end = False
+		# Clean this up. Must expect comma after each value.
+		if rhs[0] == '[': # TODO: robust syntax
+			init = bytearray()
+			for token in Patterns.wsep.split(rhs[1:]):
+				token = token.strip()
+				if not token: continue
+				if end:
+					err('SyntaxError: Token found after array initialisation.')
+				if token.isdigit():
+					init.extend(int(token).to_bytes(size, 'big'))
+				elif token == ']': end = True
+				elif token != ',': err('SyntaxError: Invalid token'
+					f' {token!r} in array initialisation.')
+			if not end:
+				err('SyntaxError: Multi-line arrays are not yet supported.')
 
-		if bin_op is not None:
-			arg_labels = get_arg_labels(bin_op)
-			if len(arg_labels) != 2: err('TypeError: '
-				f'{bin_op!r} does not take 2 arguments')
-			# if label_size(arg_labels[1]) < label_size(label):
-			# 	err(f'TypeError: Incompatible size for {bin_op!r}')
-			call_function(bin_op,
-				(Register(b_label, 'a'), Register(label, 'c')))
-			b_label = get_call_label(bin_op)
-		elif uni_chain: b_label = get_call_label(uni_chain[0])
-		else: b_label = label
+		elif rhs[0] in '"\'': # single char single quotes not yet char literal
+			# TODO: test robust syntax
+			init = bytearray()
+			s = rhs[0]
+			str_state = CHAR
+			for c in rhs[1:]:
+				if end:
+					err('SyntaxError: Token found after string initialisation.')
+				elif str_state == ESCAPE:
+					str_state = CHAR
+					if c == 'x': str_state = HEX_ESCAPE; init.append(0)
+					elif c not in escape_sequences:
+						err(f'SyntaxError: Invalid escape character {c!r}.')
+					else: init.append(ord(escape_sequences[c]))
+				elif str_state == HEX_ESCAPE:
+					if not Patterns.hex.match(c):
+						err('SyntaxError: Expected hexadecimal character.')
 
-		label = None
-		bin_op = True
-		uni_chain = []
+					if not init[-1]: init[-1] |= int(c, 16)<<4 | 15
+					else:
+						init[-1] = ~15&init[-1] | int(c, 16)
+						str_state = CHAR
 
-	# for no op (and for assignment also maybe?) check `label is None`
-	if not dest: continue
-	elif not exp: err('SyntaxError: Expected an expression.')
-	else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
+				elif c == '\\': str_state = ESCAPE
+				elif c == s: end = True
+				else: init.append(ord(c))
+			else:
+				if not end: err('SyntaxError: EOL while parsing string.')
+		else: init = None
+
+		var = var.strip()
+		match = Patterns.decl.match(var)
+		if not match: err(f'SyntaxError: Expected a declaration token.')
+		name = match[3]
+		label = match[2] or match[1]
+		declare(label, name, init = init)
+
+	# Writing to the data segment
+
+	if debug: print('VARIABLES:', *variables.values())
+
 	output()
+	insert_snippet('_data')
+	if debug: print('\nINITS:'); inits = False
+	for var in variables.values():
+		if not var.init: continue
+		if debug: print(var.name, '=', var.init); inits = True
 
-insert_snippet('_exit')
+		output(var.enc_name, end = ': db ')
+		out = repr(var.init)[12:-2].replace('`', '\\`')
+		if '\\x' not in out: output(f'`{out}`')
+		else: output(*var.init, sep = ', ')
+	if debug and not inits: print(None)
+	if debug: print()
+
+	# Writing to the text segment
+
+	infile.seek(0)
+	output('\nsegment .text')
+	output('main:')
+	for line_no, line in enumerate(infile, 1):
+		line = Patterns.stmt.match(line)[0]
+		dest, _, exp = line.rpartition('=')
+		dest = dest.strip()
+		exp  = exp.strip()
+
+		if not dest and Patterns.decl.match(exp): continue
+		# if debug: print(f'{line_no}:', line.strip())
+		isdecl = bool(Patterns.decl.match(dest))
+		# decl = True
+		uni_chain = []
+		args = []
+		label = None
+		b_label = None
+		bin_op  = None  # remembered for use after unary operations
+
+		# output(f'\n;{line_no}:', line.strip())
+
+		# expression lexing (mostly cleaned up)
+		for token in Patterns.token.finditer(exp):
+			if bin_op is True: # expecting a binary operator
+				if token[0] not in binary:
+					err('SyntaxError: Expected binary operator.')
+				bin_op = fun_encode(b_label, binary[token[0]])
+				continue
+
+			if token['symbol']: # Expecting unary. Got some symbol.
+				if token['symbol'] in '["\'':
+					if bin_op or uni_chain: err('SyntaxError: '
+						'Operations not yet supported on sequence literals.')
+					if not isdecl: err('SyntaxError: Sequence literals '
+						'not yet supported outside declaration.')
+					dest = None; break # sequence literals initialise right now
+				if token['symbol'] not in unary:
+					err('SyntaxError: Invalid unary operator.')
+				uni_chain.append(token['symbol'])
+				label = None
+				continue
+
+			if token['label']:
+				label = token['label']; uni_fill(uni_chain, label); continue
+
+
+			if uni_chain:
+				assert label or not uni_chain[-1].isidentifier()
+				assert not label or uni_chain[-1].isidentifier()
+
+			# Decode token
+			args = []
+			enc_op = None
+			if token['args'] is not None:  # required for empty arg lists
+				if not token['method']:
+					enc_op = fun_encode('', token['subject'])
+				else:
+					var = get_var(token['subject'])
+					args.append(var)
+					enc_op = fun_encode(var.get_label(), token['method'])
+				label = get_call_label(enc_op)
+				arg_labels = get_arg_labels(enc_op)[len(args):]
+				for arg, arg_label in zip(token['args'].split(','), arg_labels):
+					args.append(get_var(arg.strip(), arg_label))
+			elif token['item']:
+				var = get_var(token['subject'])
+				enc_op = fun_encode(var.get_label(), '__getitem__')
+				label = get_call_label(enc_op)
+				index_label = get_arg_labels(enc_op)[1]
+				index = get_var(token['item'], index_label)
+				args.extend([var, index])
+			else:
+				var = get_var(token['subject'], label)
+				label = var.get_label()
+
+			uni_fill(uni_chain, label)
+
+			# Call suffixes and uni_chain.
+			if enc_op is not None: call_function(enc_op, args)
+			elif uni_chain: call_function(uni_chain.pop(), (var,))
+			else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
+			for enc_op in reversed(uni_chain):
+				call_function(enc_op, (Register(label, 'a'),))
+				label = get_call_label(enc_op)
+
+			if bin_op is not None:
+				arg_labels = get_arg_labels(bin_op)
+				if len(arg_labels) != 2: err('TypeError: '
+					f'{bin_op!r} does not take 2 arguments')
+				# if label_size(arg_labels[1]) < label_size(label):
+				# 	err(f'TypeError: Incompatible size for {bin_op!r}')
+				call_function(bin_op,
+					(Register(b_label, 'a'), Register(label, 'c')))
+				b_label = get_call_label(bin_op)
+			elif uni_chain: b_label = get_call_label(uni_chain[0])
+			else: b_label = label
+
+			label = None
+			bin_op = True
+			uni_chain = []
+
+		# for no op (and for assignment also maybe?) check `label is None`
+		if not dest: continue
+		elif not exp: err('SyntaxError: Expected an expression.')
+		else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
+		output()
+
+	insert_snippet('_exit')
+
+	print(f'Generated "{output.__kwdefaults__["file"].name}" successfully.')
