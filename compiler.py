@@ -1,3 +1,6 @@
+# Modules
+import Patterns
+
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
@@ -86,31 +89,6 @@ if debug:
 			global output
 			def output(*args, file = new_outfile, **kwargs):
 				print(*args, **kwargs, file = file)
-
-import re
-class Patterns:
-	wsep  = re.compile(r'\b')
-	hex   = re.compile(r'[\da-fA-F]')
-	equal = re.compile(r'(?<!=)=(?!=)')
-	empty = re.compile(r'\[\][3-6]')
-
-	shape = r'(?:(?:\[\d+\])*|\[\]|\**)'
-	unit  = r'(?:[3-6]|[A-Za-z_]\w*)' # add tuple support
-	label = rf'{shape}{unit}'
-	decl  = re.compile(rf'(@({label})\s+|{shape}[3-6])([A-Za-z_]\w*)')
-	dest  = re.compile(rf'(@{label}\s+|{shape}[3-6])?(\**)([A-Za-z_]\w*)'
-			r'(?:\[([A-Za-z_]\w*|\d+)\])?')
-	token = re.compile(rf'@(?P<label>{label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
-		r'(?:\s*(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
-		r'\[(?P<item>.*?)\]' ')?|'
-		r'(?P<symbol>\S)')
-
-	stmt  = re.compile(r'(([\'"])(\\?.)*?\2|[^#])*')
-	snip  = re.compile(r'%(\d+|e)([RELSCNU]|(?P<reg>[sd]i|[ibs]p|[a-d]))?\b')
-
-	default = re.compile(r'(?P<param>(?P<int>[3-6])|(?:(?P<arr>\[\d+\])|\*))'
-			# (?#|[3-6])))
-			rf'(?P<element>{shape}(?:_?\w)*?)_(?P<method>[dm]\w*)')
 
 class Variable:
 	def __init__(self, label, name):
