@@ -60,24 +60,27 @@ binary = {
 if debug:
 	class Debug:
 		@staticmethod
-		def get_snippets(): return snippets
-		@staticmethod
-		def get_variables(): return variables
-		@staticmethod
-		def get_infile(): return infile
-		@staticmethod
-		def get_outfile(): return output.__kwdefaults__["file"]
-		@staticmethod
-		def get_sfile(): return sfile
-
-		@staticmethod
 		def set_snippets(new_snippets): global snippets; snippets = new_snippets
 		@staticmethod
 		def set_variables(new_variables): global variables; variables = new_variables
 		@staticmethod
+		def set_functions(new_functions): global functions; functions = new_functions
+		@staticmethod
+		def set_labels(new_labels): global labels; labels = new_labels
+		@staticmethod
 		def set_infile(new_infile): global infile; infile = new_infile
 		@staticmethod
-		def set_sfile(new_sfile): global sfile; sfile = new_sfile
+		def set_snippets(new_sfile, crlf = None):
+			global sfile, snippets
+			sfile = new_sfile
+			if crlf is None: crlf = CR_offset
+			snippets = {}
+			tell = 0
+			for line_no, line in enumerate(sfile, 1):
+				tell += len(line)+crlf
+				if not line.startswith('; '): continue
+				enc_name, ret_label, *arg_labels = line[2:].split()
+				snippets[enc_name] = (tell, ret_label, arg_labels)
 		@staticmethod
 		def set_output_file(new_outfile):
 			global output
