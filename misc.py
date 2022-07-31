@@ -1,3 +1,6 @@
+import compiler
+from sys import argv
+
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
@@ -40,9 +43,9 @@ binary = {
 }
 
 def err(msg):
-	print(f'File "{argv[1]}", line {line_no}')
-	print('   ', line.strip())
-	if debug: raise RuntimeError(repr(msg))
+	print(f'File "{argv[1]}", line {compiler.line_no}')
+	print('   ', compiler.line.strip())
+	if compiler.debug: raise RuntimeError(repr(msg))
 
 	print(msg)
 	quit(1)
