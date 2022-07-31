@@ -181,7 +181,7 @@ def label_size(label): # number of bytes
 	fac = 1
 	num = ''
 	for i, d in enumerate(label):
-		if d.isidentifier(): num = labels[label[i:]].size; break
+		if d.isidentifier(): num = labels[label[i:]].size_n; break
 		if d == '*': num = 6; break
 		# add support for varrs (6, *d)
 		if d == ']': fac *= int(num); num = ''
@@ -391,22 +391,22 @@ def call_function(enc_op, args : tuple[Variable] = ()):
 		err(f'TypeError: {enc_op!r} takes exactly {len(arg_labels)} arguments '
 			f'({len(args)} given)')
 
-	offset = -3
+	offset = -len(arg_regs)
 	for arg in args:
 		if not arg.size_n:
 			err(f'TypeError: {arg.name!r} cannot be passed as an argument.')
 
-		if offset >= 0: output('push', arg_clause)
+		if offset >= 0: output('push', arg.get_clause())
 		else:
-			output(f'mov {get_reg(arg_reg[offset], arg.size_n)}, {arg.name}')
+			output(f'mov {get_reg(arg_regs[offset], arg.size_n)}, {arg.name}')
 		offset += 1
 
-	if not offset&1: offset += 1; output('sub rsp, 8')
+	if offset > 0 and offset&1: offset += 1; output('sub rsp, 8')
 	# if vector_fun: output(f'mov rax, {vectors}')
 	output('push rbp')
 	output('call', enc_op)
 	output('pop rbp')
-	if offset: output('add rsp,', offset*8)
+	if offset > 0: output('add rsp,', offset*8)
 
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
@@ -680,4 +680,4 @@ if __name__ == '__main__':
 
 	insert_snippet('_exit')
 
-	print(f'Generated "{output.__kwdefaults__["file"].name}" successfully.')
+	# print(f'Generated "{output.__kwdefaults__["file"].name}" successfully.')
