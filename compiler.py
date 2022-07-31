@@ -14,13 +14,18 @@ infile = open(argv[1])
 out = open(argv[2], 'w')
 def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 
-sfile = open('builtins.ice-snippet')
 # Modules
 import Patterns
 from misc import *
 
+import snippets
+snippets.set_output(output)
+sfile = open('builtins.ice-snippet')
+snippets.read_snippets(sfile, CR_offset)
 
 if debug:
+	print('BUILTINS: ', *snippets.snippets)
+	
 	class Debug:
 		@staticmethod
 		def set_snippets(new_snippets): global snippets; snippets = new_snippets
@@ -37,18 +42,13 @@ if debug:
 			global sfile, snippets
 			sfile = new_sfile
 			if crlf is None: crlf = CR_offset
-			snippets = {}
-			tell = 0
-			for line_no, line in enumerate(sfile, 1):
-				tell += len(line)+crlf
-				if not line.startswith('; '): continue
-				enc_name, ret_label, *arg_labels = line[2:].split()
-				snippets[enc_name] = (tell, ret_label, arg_labels)
+			snippets.read_snippets(sfile, crlf)
 		@staticmethod
 		def set_output_file(new_outfile):
 			global output
 			def output(*args, file = new_outfile, **kwargs):
 				print(*args, **kwargs, file = file)
+			snippets.set_output(output)
 
 class Variable:
 	def __init__(self, label, name):
@@ -166,16 +166,11 @@ def declare(label, name, init = None):
 				f'Got {len(init)} instead.')
 		var.init = init
 
-def get_snippet_label(enc_name, p, e): # use this if you know it's a snippet
-	seek, ret_label, arg_labels = snippets[enc_name]
-	if e is None: return ret_label
-	return ret_label.replace('$e', e).replace('$s', p+e)
-
 def get_call_label(enc_op): # this works for any enc_op
 	if debug: print(f'Requested label of enc_op {enc_op!r}')
 
-	enc_op, p, e = snippet_encode(enc_op)
-	if enc_op in snippets: return get_snippet_label(enc_op, p, e)
+	enc_op, p, e = snippets.encode(enc_op)
+	if enc_op in snippets.snippets: return snippets.get_label(enc_op, p, e)
 
 	# Is it possible for snippet encode to run if enc_op in functions?
 	if enc_op not in functions:
@@ -183,10 +178,10 @@ def get_call_label(enc_op): # this works for any enc_op
 	return functions[enc_op][0] # (ret_label, *arg_labels)
 
 def get_arg_labels(enc_op):
-	enc_op, p, e = snippet_encode(enc_op)
-	if enc_op in snippets:
-		seek, ret_label, arg_labels = snippets[enc_op]
-		return decode_snippet_args(arg_labels, p, e)
+	enc_op, p, e = snippets.encode(enc_op)
+	if enc_op in snippets.snippets:
+		seek, ret_label, arg_labels = snippets.snippets[enc_op]
+		return snippets.decode_args(arg_labels, p, e)
 
 	# Is it possible for snippet encode to run if enc_op in functions?
 	if enc_op not in functions:
@@ -197,81 +192,6 @@ def get_var(name, label = None):
 	if name.isdigit(): return Literal(label or '6', name)
 	if name not in variables: err(f'NameError: {name!r} not defined.')
 	return variables[name]
-
-
-# TODO?: `Snippet` class
-
-def snippet_encode(name):
-	match = Patterns.default.match(name)
-	if not match: return name, None, None
-
-	method = match['method']
-	if   match['int']: enc_name = '_u'+method
-	elif match['arr']: enc_name = '_a'+method
-	else: enc_name = '_p'+method
-
-	return enc_name, match['param'], match['element']
-
-def decode_snippet_args(arg_labels, p, e) -> list[str]:
-	arg_labels = arg_labels.copy()
-
-	# TODO: add support for dynamic arrays
-
-	if p == '*': p = '6'
-	elif e: p = int(p[1:-1]); e = str(label_size(e))
-	for i, size_n in enumerate(arg_labels):
-		if   size_n == 's': arg_labels[i] = p
-		elif size_n == 'e': arg_labels[i] = e
-		else: arg_labels[i] = size_n
-
-	return arg_labels
-
-def insert_snippet(enc_name, args = (), p = None, e = None, match_args = True):
-	seek, ret_label, arg_labels = snippets[enc_name]
-	# if p:
-	# ret_label = ret_label.replace('$e', e).replace('$s', p+e)
-	# arg_labels, seek = snippet_setup(enc_name, args, p, e)
-	if p: arg_labels = decode_snippet_args(arg_labels, p, e)
-
-	# What if an argument is in c and another in a?
-	# And I want to move a into c, then use the first argument.
-
-	sfile.seek(seek)
-	for line in sfile:
-		if line in (';', ';\n'): break
-		dline = line.strip()
-
-		offset = 0
-		for match in Patterns.snip.finditer(line):
-			start, end = match.span()
-			start += offset
-			end   += offset
-			if match[1] == 'e': label = e; arg = Literal(label, '0')
-			else:
-				n = int(match[1])
-
-				arg = args[n]
-
-				label = arg.get_label()
-			tail = match[2]
-
-			if not tail:
-				print(f'File "{sfile.name}", in {enc_name}')
-				err(f'Error: tail required in {dline!r}')
-			elif tail == 'R':  sub = arg.name
-			elif tail == 'E':  sub = arg.enc_name
-			elif tail == 'L':  sub = str(get_length(label))
-
-			elif tail == 'S':  sub = size_list[arg.size_n]
-			elif tail == 'C':  sub = arg.get_clause()
-			elif tail == 'N':  sub = str(label_size(label))
-			elif tail == 'U':  sub = str(element_size(label))
-			elif match['reg']: sub = get_reg(tail, arg.size_n)
-			else: continue
-
-			offset += len(sub)-len(match[0])
-			line = line[:start]+sub+line[end:]
-		output(line.strip())
 
 def uni_fill(uni_chain, label):
 	for i, uni in enumerate(reversed(uni_chain), 1):
@@ -291,10 +211,10 @@ def uni_fill(uni_chain, label):
 # and not to a variable with a __call__ method.
 # Should that check be here?
 def call_function(enc_op, args : tuple[Variable] = ()):
-	enc_op, p, e = snippet_encode(enc_op)
+	enc_op, p, e = snippets.encode(enc_op)
 
-	if enc_op in snippets:
-		insert_snippet(enc_op, args, p, e)
+	if enc_op in snippets.snippets:
+		snippets.insert(enc_op, args, p, e)
 		return
 
 	if enc_op not in functions:
@@ -362,21 +282,8 @@ def assign(dest, imm: Variable = None):
 variables = {}
 functions = {}
 
-snippets = {}
-tell = 0
-for line_no, line in enumerate(sfile, 1):
-	tell += len(line)+CR_offset
-	if not line.startswith('; '): continue
-	enc_name, ret_label, *arg_labels = line[2:].split()
-	snippets[enc_name] = (tell, ret_label, arg_labels)
-# starts at a line starting with '; ' (mind the space)
-# ends at a line with just ';' (refer `insert_snippet()`)
-
-if debug: print('BUILTINS: ', *snippets)
-
-
 if __name__ == '__main__':
-	insert_snippet('_header')
+	snippets.insert('_header')
 
 	# Writing to bss segment
 
@@ -472,7 +379,7 @@ if __name__ == '__main__':
 	if debug: print('VARIABLES:', *variables.values())
 
 	output()
-	insert_snippet('_data')
+	snippets.insert('_data')
 	if debug: print('\nINITS:'); inits = False
 	for var in variables.values():
 		if not var.init: continue
@@ -594,6 +501,6 @@ if __name__ == '__main__':
 		else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
 		output()
 
-	insert_snippet('_exit')
+	snippets.insert('_exit')
 
 	# print(f'Generated "{output.__kwdefaults__["file"].name}" successfully.')
