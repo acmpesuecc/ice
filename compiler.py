@@ -17,6 +17,7 @@ def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 # Modules
 import Patterns
 from misc import *
+from labels import labels
 
 import snippets
 snippets.set_output(output)
@@ -34,7 +35,7 @@ if debug:
 		@staticmethod
 		def set_functions(new_functions): global functions; functions = new_functions
 		@staticmethod
-		def set_labels(new_labels): global labels; labels = new_labels
+		def set_labels(new_labels): labels.clear(); labels.update(new_labels)
 		@staticmethod
 		def set_infile(new_infile): global infile; infile = new_infile
 		@staticmethod
@@ -49,71 +50,6 @@ if debug:
 			def output(*args, file = new_outfile, **kwargs):
 				print(*args, **kwargs, file = file)
 			snippets.set_output(output)
-
-class Variable:
-	def __init__(self, label, name):
-		self.name = name
-		self.init = None
-		self.size = label_size(label)
-		if self.size in {1, 2, 4, 8}: self.size_n = self.size.bit_length()+2
-		else: self.size_n = 0
-		self.enc_name = self.encode()
-		self.labels = [label]
-
-	def __repr__(self):
-		return f'{type(self).__name__}(@{self.get_label()} {self.name}, '\
-			f'size = {self.size}, size_n = {self.size_n})'
-
-	def encode(self):
-		# enc_name = self.name.replace('_', '__')
-		return '$'+self.name
-
-	def get_label(self):
-		return self.labels[-1]
-
-	def get_clause(self, unit = False):
-		return f'{size_list[self.size_n]} [{self.enc_name}]'
-
-class Register(Variable):
-	def encode(self):
-		return get_reg(self.name, self.size_n)
-	def get_clause(self, unit = False): return self.encode()
-
-class Literal(Variable):
-	def encode(self): return self.name
-	def get_clause(self, unit = False): return self.name
-
-def get_length(label):
-	# if label[0] == '*': return 1
-	length = 1
-	# TODO: add support for dynamic arrays
-	for i in label[1:-2].split(']['):
-		if not i: continue
-		length *= int(i)
-	return length
-
-labels = {}
-def label_size(label): # number of bytes
-	fac = 1
-	num = ''
-	for i, d in enumerate(label):
-		if d.isidentifier(): num = labels[label[i:]].size_n; break
-		if d == '*': num = 6; break
-		# add support for varrs (6, *d)
-		if d == ']': fac *= int(num); num = ''
-		elif d.isdigit(): num += d
-	if num: return (fac<<(max(0, int(num)-3)))
-	# control comes here only if the label format isn't right
-	err('SyntaxError: Invalid label syntax.')
-
-def element_size(label):
-	if '*' in label: num = 8
-	elif label[-1].isdigit(): num = 1<<max(0, int(label[-1])-3)
-	else: num = 8
-
-	# TODO: support named labels
-
-	return num
 
 def fun_encode(label, op):
 	# check if label has that method?
