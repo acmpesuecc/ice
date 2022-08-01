@@ -19,10 +19,11 @@ import Patterns
 from misc import *
 from labels import labels
 
+import functions
+functions.set_output(output)
+
 import snippets
 snippets.set_output(output)
-sfile = open('builtins.ice-snippet')
-snippets.read_snippets(sfile, CR_offset)
 
 if debug:
 	print('BUILTINS: ', *snippets.snippets)
@@ -33,7 +34,7 @@ if debug:
 		@staticmethod
 		def set_variables(new_variables): global variables; variables = new_variables
 		@staticmethod
-		def set_functions(new_functions): global functions; functions = new_functions
+		def set_functions(new_functions): functions.clear(); functions.update(new_functions)
 		@staticmethod
 		def set_labels(new_labels): labels.clear(); labels.update(new_labels)
 		@staticmethod
@@ -50,19 +51,7 @@ if debug:
 			def output(*args, file = new_outfile, **kwargs):
 				print(*args, **kwargs, file = file)
 			snippets.set_output(output)
-
-def fun_encode(label, op):
-	# check if label has that method?
-	enc_op = op.replace('_', '__')
-	if not label: return enc_op
-
-	if len(op.lstrip('_'))+2 <= len(op) >= len(op.rstrip('_'))+2:
-		enc_op = '_d'+enc_op[4:-4]
-	else: enc_op = '_m'+enc_op
-
-	label  = label.replace('_', '__')
-	enc_op = label+enc_op
-	return enc_op
+			functions.set_output(output)
 
 def declare(label, name, init = None):
 	if Patterns.empty.fullmatch(label):
@@ -102,28 +91,6 @@ def declare(label, name, init = None):
 				f'Got {len(init)} instead.')
 		var.init = init
 
-def get_call_label(enc_op): # this works for any enc_op
-	if debug: print(f'Requested label of enc_op {enc_op!r}')
-
-	enc_op, p, e = snippets.encode(enc_op)
-	if enc_op in snippets.snippets: return snippets.get_label(enc_op, p, e)
-
-	# Is it possible for snippet encode to run if enc_op in functions?
-	if enc_op not in functions:
-		err(f'NameError: function {enc_op!r} not defined.')
-	return functions[enc_op][0] # (ret_label, *arg_labels)
-
-def get_arg_labels(enc_op):
-	enc_op, p, e = snippets.encode(enc_op)
-	if enc_op in snippets.snippets:
-		seek, ret_label, arg_labels = snippets.snippets[enc_op]
-		return snippets.decode_args(arg_labels, p, e)
-
-	# Is it possible for snippet encode to run if enc_op in functions?
-	if enc_op not in functions:
-		err(f'NameError: function {enc_op!r} not defined.')
-	return functions[enc_op][1:] # (ret_label, *arg_labels)
-
 def get_var(name, label = None):
 	if name.isdigit(): return Literal(label or '6', name)
 	if name not in variables: err(f'NameError: {name!r} not defined.')
@@ -132,53 +99,8 @@ def get_var(name, label = None):
 def uni_fill(uni_chain, label):
 	for i, uni in enumerate(reversed(uni_chain), 1):
 		if uni.isidentifier(): break
-		uni_chain[-i] = fun_encode(label, unary[uni])
-		label = get_call_label(uni_chain[-i])
-
-# def call_function(subject, op, args = (), label = None):
-	# if label is not None: enc_op = fun_encode(label, op); args = (subject,)+args
-	# elif subject in variables:
-	# 	label = variables[subject].get_label()
-	# 	enc_op = fun_encode(label, op)
-	# elif op == '__call__': enc_op = subject.replace('_', '__')
-	# else: err(f'NameError: Variable {subject!r} not declared.')
-
-# Would take subject to check if it is a call to a function
-# and not to a variable with a __call__ method.
-# Should that check be here?
-def call_function(enc_op, args : tuple[Variable] = ()):
-	enc_op, p, e = snippets.encode(enc_op)
-
-	if enc_op in snippets.snippets:
-		snippets.insert(enc_op, args, p, e)
-		return
-
-	if enc_op not in functions:
-		err(f'NameError: Function {enc_op!r} not defined.')
-
-	arg_labels = functions[enc_op][1:]
-
-	# TODO: plural
-	if len(args) != len(arg_labels):
-		err(f'TypeError: {enc_op!r} takes exactly {len(arg_labels)} arguments '
-			f'({len(args)} given)')
-
-	offset = -len(arg_regs)
-	for arg in args:
-		if not arg.size_n:
-			err(f'TypeError: {arg.name!r} cannot be passed as an argument.')
-
-		if offset >= 0: output('push', arg.get_clause())
-		else:
-			output(f'mov {get_reg(arg_regs[offset], arg.size_n)}, {arg.name}')
-		offset += 1
-
-	if offset > 0 and offset&1: offset += 1; output('sub rsp, 8')
-	# if vector_fun: output(f'mov rax, {vectors}')
-	output('push rbp')
-	output('call', enc_op)
-	output('pop rbp')
-	if offset > 0: output('add rsp,', offset*8)
+		uni_chain[-i] = functions.encode(label, unary[uni])
+		label = functions.get_label(uni_chain[-i])
 
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
@@ -193,30 +115,29 @@ def assign(dest, imm: Variable = None):
 
 	if index:
 		if deref: err("SyntaxError: Can't assign to multiple operations yet.")
-		fun = fun_encode(dest.get_label(), '__setitem__')
-		arg_labels = get_arg_labels(fun)
+		fun = functions.encode(dest.get_label(), '__setitem__')
+		arg_labels = functions.get_arg_labels(fun)
 		print(f'{fun = }, {arg_labels = }, {index = }')
 		
 		if index.isdigit(): index = Literal(arg_labels[1], index)
 		elif index not in variables: err(f'NameError: {index!r} not declared.')
 		else: index = variables[index]
 
-		call_function(fun, (dest, index, imm or Register(arg_labels[2], 'a')))
+		functions.call(fun, (dest, index, imm or Register(arg_labels[2], 'a')))
 		return
 
 	# Use __setat__ when * in dest
 	if len(deref) > 2:
 		err("SyntaxError: Can't assign to multiple dereferences yet.")
 	if deref:
-		fun = fun_encode(dest.get_label(), '__setat__')
-		label = get_arg_labels(fun)[1]
-		call_function(fun, (dest, imm or Register(label, 'a')))
+		fun = functions.encode(dest.get_label(), '__setat__')
+		label = functions.get_arg_labels(fun)[1]
+		functions.call(fun, (dest, imm or Register(label, 'a')))
 		return
 
 	output(f"mov {dest.get_clause()}, {imm or get_reg('a', dest.size_n)}")
 
 variables = {}
-functions = {}
 
 if __name__ == '__main__':
 	snippets.insert('_header')
@@ -356,7 +277,7 @@ if __name__ == '__main__':
 			if bin_op is True: # expecting a binary operator
 				if token[0] not in binary:
 					err('SyntaxError: Expected binary operator.')
-				bin_op = fun_encode(b_label, binary[token[0]])
+				bin_op = functions.encode(b_label, binary[token[0]])
 				continue
 
 			if token['symbol']: # Expecting unary. Got some symbol.
@@ -385,20 +306,20 @@ if __name__ == '__main__':
 			enc_op = None
 			if token['args'] is not None:  # required for empty arg lists
 				if not token['method']:
-					enc_op = fun_encode('', token['subject'])
+					enc_op = functions.encode('', token['subject'])
 				else:
 					var = get_var(token['subject'])
 					args.append(var)
-					enc_op = fun_encode(var.get_label(), token['method'])
-				label = get_call_label(enc_op)
-				arg_labels = get_arg_labels(enc_op)[len(args):]
+					enc_op = functions.encode(var.get_label(), token['method'])
+				label = functions.get_label(enc_op)
+				arg_labels = functions.get_arg_labels(enc_op)[len(args):]
 				for arg, arg_label in zip(token['args'].split(','), arg_labels):
 					args.append(get_var(arg.strip(), arg_label))
 			elif token['item']:
 				var = get_var(token['subject'])
-				enc_op = fun_encode(var.get_label(), '__getitem__')
-				label = get_call_label(enc_op)
-				index_label = get_arg_labels(enc_op)[1]
+				enc_op = functions.encode(var.get_label(), '__getitem__')
+				label = functions.get_label(enc_op)
+				index_label = functions.get_arg_labels(enc_op)[1]
 				index = get_var(token['item'], index_label)
 				args.extend([var, index])
 			else:
@@ -408,23 +329,23 @@ if __name__ == '__main__':
 			uni_fill(uni_chain, label)
 
 			# Call suffixes and uni_chain.
-			if enc_op is not None: call_function(enc_op, args)
-			elif uni_chain: call_function(uni_chain.pop(), (var,))
+			if enc_op is not None: functions.call(enc_op, args)
+			elif uni_chain: functions.call(uni_chain.pop(), (var,))
 			else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
 			for enc_op in reversed(uni_chain):
-				call_function(enc_op, (Register(label, 'a'),))
-				label = get_call_label(enc_op)
+				functions.call(enc_op, (Register(label, 'a'),))
+				label = functions.get_label(enc_op)
 
 			if bin_op is not None:
-				arg_labels = get_arg_labels(bin_op)
+				arg_labels = functions.get_arg_labels(bin_op)
 				if len(arg_labels) != 2: err('TypeError: '
 					f'{bin_op!r} does not take 2 arguments')
 				# if label_size(arg_labels[1]) < label_size(label):
 				# 	err(f'TypeError: Incompatible size for {bin_op!r}')
-				call_function(bin_op,
+				functions.call(bin_op,
 					(Register(b_label, 'a'), Register(label, 'c')))
-				b_label = get_call_label(bin_op)
-			elif uni_chain: b_label = get_call_label(uni_chain[0])
+				b_label = functions.get_label(bin_op)
+			elif uni_chain: b_label = functions.get_label(uni_chain[0])
 			else: b_label = label
 
 			label = None
