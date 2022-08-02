@@ -1,5 +1,7 @@
 import Patterns
-from misc import get_reg, err
+import functions
+from misc import get_reg, err, Literal, Register
+import labels
 
 def set_output(new_output):
 	global output
