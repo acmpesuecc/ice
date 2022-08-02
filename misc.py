@@ -1,4 +1,5 @@
 import compiler
+from labels import get_size as label_size
 from sys import argv
 
 # String States
@@ -64,3 +65,35 @@ def get_reg(reg: r'[abcd]|[ds]i|[sbi]p', size_n):
 	if size_n == 4: return reg
 	return 'er'[size_n-5]+reg
 
+class Variable:
+	def __init__(self, label, name):
+		self.name = name
+		self.init = None
+		self.size = label_size(label)
+		if self.size in {1, 2, 4, 8}: self.size_n = self.size.bit_length()+2
+		else: self.size_n = 0
+		self.enc_name = self.encode()
+		self.labels = [label]
+
+	def __repr__(self):
+		return f'{type(self).__name__}(@{self.get_label()} {self.name}, '\
+			f'size = {self.size}, size_n = {self.size_n})'
+
+	def encode(self):
+		# enc_name = self.name.replace('_', '__')
+		return '$'+self.name
+
+	def get_label(self):
+		return self.labels[-1]
+
+	def get_clause(self, unit = False):
+		return f'{size_list[self.size_n]} [{self.enc_name}]'
+
+class Register(Variable):
+	def encode(self):
+		return get_reg(self.name, self.size_n)
+	def get_clause(self, unit = False): return self.encode()
+
+class Literal(Variable):
+	def encode(self): return self.name
+	def get_clause(self, unit = False): return self.name
