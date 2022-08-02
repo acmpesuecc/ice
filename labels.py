@@ -1,4 +1,9 @@
 labels = {}
+
+def set_labels(new_labels):
+	global labels
+	labels = new_labels
+
 def get_length(label):
 	# if label[0] == '*': return 1
 	length = 1
