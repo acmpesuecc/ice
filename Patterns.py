@@ -16,8 +16,11 @@ token = _compile(rf'@(?P<label>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
 	r'(?P<symbol>\S)')
 
 stmt  = _compile(r'(([\'"])(\\?.)*?\2|[^#])*')
-snip  = _compile(r'%(\d+|e)([RELSCNU]|(?P<reg>[sd]i|[ibs]p|[a-d]))?\b')
 
+_reg = r'[abcd]|[ds]i|[sbi]p|r(?:8|9|1[1-5])'
+snip  = _compile(rf'%(\d+|e)([RELSCNU]|(?P<reg>{_reg}))?\b')
 default = _compile(r'(?P<param>(?P<int>[3-6])|(?:(?P<arr>\[\d+\])|\*))'
 		# (?#|[3-6])))
 		rf'(?P<element>{_shape}(?:_?\w)*?)_(?P<method>[dm]\w*)')
+call  = _compile(rf'%(\d)(?P<reg>{_reg})?\.(\w+)'
+	r'\(((?:\s*%?\w+)?(?:\s*,\s*%?\w+)*\s*)\)')

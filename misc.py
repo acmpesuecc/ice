@@ -5,7 +5,7 @@ from sys import argv
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
 
 import os
-CR_offset = int(os.name == 'nt')
+crlf = int(os.name == 'nt')
 
 # byte if size <= 8, word if 16 ...
 size_list = ['byte', 'byte', 'byte', 'byte', 'word', 'dword', 'qword']
@@ -51,7 +51,7 @@ def err(msg):
 	print(msg)
 	quit(1)
 
-def get_reg(reg: r'[abcd]|[ds]i|[sbi]p', size_n):
+def get_reg(reg: r'[abcd]|[ds]i|[sbi]p|r(8|9|1[1-5])', size_n):
 	if not size_n: err("TypeError: Can't fit in a register.")
 	if reg in 'abcd':
 		l, r = reg_list[size_n]

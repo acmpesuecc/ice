@@ -7,13 +7,14 @@ def set_output(new_output):
 	global output
 	output = new_output
 
-def read_snippets(new_sfile, CR_offset):
-	global sfile, snippets
+def read_snippets(new_sfile, new_crlf):
+	global sfile, snippets, crlf
+	crlf = new_crlf
 	sfile = new_sfile
 	snippets = {}
 	tell = 0
 	for line_no, line in enumerate(sfile, 1):
-		tell += len(line)+CR_offset
+		tell += len(line)+crlf
 		if not line.startswith('; '): continue
 		enc_name, ret_label, *arg_labels = line[2:].split()
 		snippets[enc_name] = (tell, ret_label, arg_labels)
@@ -63,7 +64,32 @@ def insert(enc_name, args = (), p = None, e = None, match_args = True):
 	sfile.seek(seek)
 	for line in sfile:
 		if line in (';', ';\n'): break
-		dline = line.strip()
+		seek += len(line)+crlf
+		line = line.strip()
+
+		match = Patterns.call.match(line)
+		if match:
+			subject, method, argstr = match[1], match[3], match[4]
+			subject = args[int(subject)]
+			rec_args = [subject]
+
+			print(f'{subject = }, {method =}, {argstr = }')
+			enc_op = functions.encode(subject.get_label(), method)
+			arg_labels = functions.get_arg_labels(enc_op)
+			for arg, arg_label in zip(argstr.split(','), arg_labels):
+				arg = arg.strip()
+				if not arg: continue
+
+				if arg.isdigit(): rec_args.append(Literal('6', arg))
+				elif arg.startswith('%'):
+					match = Patterns.snip.match(arg)
+					if not match: return -1
+					if not match['reg']: rec_args.append(args[int(match[1])])
+					else: rec_args.append(Register(arg_label, match['reg']))
+				else: rec_args.append(Register(arg_label, arg))
+			functions.call(enc_op, rec_args)
+			sfile.seek(seek)
+			continue
 
 		offset = 0
 		for match in Patterns.snip.finditer(line):
@@ -71,17 +97,12 @@ def insert(enc_name, args = (), p = None, e = None, match_args = True):
 			start += offset
 			end   += offset
 			if match[1] == 'e': label = e; arg = Literal(label, '0')
-			else:
-				n = int(match[1])
-
-				arg = args[n]
-
-				label = arg.get_label()
+			else: arg = args[int(match[1])]; label = arg.get_label()
 			tail = match[2]
 
 			if not tail:
 				print(f'File "{sfile.name}", in {enc_name}')
-				err(f'Error: tail required in {dline!r}')
+				err(f'Error: tail required in {line!r}')
 			elif tail == 'R':  sub = arg.name
 			elif tail == 'E':  sub = arg.enc_name
 			elif tail == 'L':  sub = str(labels.get_length(label))

@@ -22,6 +22,7 @@
 
 ; _header void
 extern printf
+extern sprintf
 extern malloc
 extern exit
 global main
@@ -32,6 +33,10 @@ segment .data
 _p: db `%u\n`, 0
 _c: db 0, 0
 _ln: db 0, 10, 0
+_fmt_udstr: db `%u`, 0
+_str: times 20 db 0
+_p_str: db `%s`, 0
+_p_strln: db `%s\n`, 0
 ;
 
 ; _dprint_lnxs void 6
@@ -94,18 +99,30 @@ mul %1C
 ;
 
 ; _udtruediv $s s s
-xor rax, rax
 xor rdx, rdx
 mov %0a, %0C
 div %1C
 ;
 
 ; _udmod $s s s
-xor rax, rax
 xor rdx, rdx
 mov %0a, %0C
 div %1C
-mov %0d, %0a
+mov %0a, %0d
+;
+
+; _udstr *3 s
+mov rcx, _str
+mov rdx, _fmt_udstr
+mov %0r8, %0C
+push rbp
+call sprintf
+pop rbp
+mov rax, _str
+;
+
+; _pdstr *3 6
+mov rax, %0C
 ;
 
 ; _pdderef $e 6
@@ -149,8 +166,26 @@ call printf
 pop rbp
 ;
 
-; print void 6
-;; print void 6
+; print void s
+%0.__str__()
+mov rdx, rax
+mov rcx, _p_str
+push rbp
+call printf
+pop rbp
+;
+
+; println void s
+%0.__str__()
+mov rdx, rax
+mov rcx, _p_strln
+push rbp
+call printf
+pop rbp
+;
+
+; printstr void 6
+;; printstr void 6
 mov bl, byte [%0L*%0U + %0E - 1]
 mov byte [%0L*%0U + %0E - 1], 0
 mov rcx, %0E
@@ -161,23 +196,6 @@ mov byte [%0L*%0U + %0E - 1], bl
 
 mov byte [_c], bl
 mov rcx, _c
-push rbp
-call printf
-pop rbp
-;
-
-; println void 6
-;; println void 6
-mov bl, byte [%0L*%0U + %0E - 1]
-mov byte [%0L*%0U + %0E - 1], 0
-mov rcx, %0E
-push rbp
-call printf
-pop rbp
-mov byte [%0L*%0U + %0E - 1], bl
-
-mov byte [_ln], bl
-mov rcx, _ln
 push rbp
 call printf
 pop rbp

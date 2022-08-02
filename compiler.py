@@ -2,7 +2,7 @@ from sys import argv
 
 if __name__ != '__main__': debug = True
 elif '-d' in argv: debug = True; argv.remove('-d')
-else: debug = False
+else: debug = True
 
 if len(argv) <2:
 	if debug: argv.append('Tests\\refactor tester.ice')
@@ -25,9 +25,11 @@ functions.set_output(output)
 import snippets
 snippets.set_output(output)
 sfile = open('builtins.ice-snippet')
-snippets.read_snippets(sfile, CR_offset)
+snippets.read_snippets(sfile, crlf)
 
 if debug:
+	line_no = 0
+	line = '[DEBUG] *Empty line*'
 	print('BUILTINS: ', *snippets.snippets)
 	
 	class Debug:
@@ -42,11 +44,11 @@ if debug:
 		@staticmethod
 		def set_infile(new_infile): global infile; infile = new_infile
 		@staticmethod
-		def set_snippets(new_sfile, crlf = None):
+		def set_snippets(new_sfile, new_crlf = None):
 			global sfile, snippets
 			sfile = new_sfile
-			if crlf is None: crlf = CR_offset
-			snippets.read_snippets(sfile, crlf)
+			if new_crlf is None: new_crlf = crlf
+			snippets.read_snippets(sfile, new_crlf)
 		@staticmethod
 		def set_output_file(new_outfile):
 			global output
@@ -263,6 +265,7 @@ if __name__ == '__main__':
 		exp  = exp.strip()
 
 		if not dest and Patterns.decl.match(exp): continue
+		if not line.strip(): continue
 		# if debug: print(f'{line_no}:', line.strip())
 		isdecl = bool(Patterns.decl.match(dest))
 		# decl = True
@@ -272,7 +275,7 @@ if __name__ == '__main__':
 		b_label = None
 		bin_op  = None  # remembered for use after unary operations
 
-		# output(f'\n;{line_no}:', line.strip())
+		if debug: output(f'\n;{line_no}:', line.strip())
 
 		# expression lexing (mostly cleaned up)
 		for token in Patterns.token.finditer(exp):
