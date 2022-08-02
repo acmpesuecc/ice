@@ -17,13 +17,15 @@ def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 # Modules
 import Patterns
 from misc import *
-from labels import labels
+import labels
 
 import functions
 functions.set_output(output)
 
 import snippets
 snippets.set_output(output)
+sfile = open('builtins.ice-snippet')
+snippets.read_snippets(sfile, CR_offset)
 
 if debug:
 	print('BUILTINS: ', *snippets.snippets)
@@ -34,9 +36,9 @@ if debug:
 		@staticmethod
 		def set_variables(new_variables): global variables; variables = new_variables
 		@staticmethod
-		def set_functions(new_functions): functions.clear(); functions.update(new_functions)
+		def set_functions(new_functions): functions.set_functions(new_functions)
 		@staticmethod
-		def set_labels(new_labels): labels.clear(); labels.update(new_labels)
+		def set_labels(new_labels): labels.set_labels(new_labels)
 		@staticmethod
 		def set_infile(new_infile): global infile; infile = new_infile
 		@staticmethod
@@ -57,12 +59,12 @@ def declare(label, name, init = None):
 	if Patterns.empty.fullmatch(label):
 		if init is None:
 			err('SyntaxError: Implicit length requires initialisation.')
-		init_length = len(init)//element_size(label)
+		init_length = len(init)//labels.element_size(label)
 		label = label[0]+str(init_length)+label[1:]
 
 	if name in variables: # check prev
 		var = variables[name]
-		size = label_size(label)
+		size = labels.get_size(label)
 		# TODO: plural
 		if var.size != size: err(f'TypeError: {var.name!r}'
 			f' uses {var.size} bytes, but {label!r} needs {size} bytes.')
@@ -84,7 +86,7 @@ def declare(label, name, init = None):
 			err('ValueError: Cannot initialize non-sequence as sequence.')
 		if '*' in label: err('ValueError: Sequence initialisation '
 			'not yet supported for pointers.')
-		size = label_size(label)
+		size = labels.get_size(label)
 		# TODO: plural
 		if len(init) != size:
 			err(f'TypeError: {var.name!r} needs {size} bytes. '
@@ -174,7 +176,7 @@ if __name__ == '__main__':
 		if len(decls) != 1 and not (decl[2] and len(decls) == 2):
 			err('SyntaxError: Assignment with multiple declarations')
 		var = decl[0]
-		size = element_size(decl[1])
+		size = labels.element_size(decl[1])
 
 		rhs = rhs[0].strip()
 		end = False
@@ -340,7 +342,7 @@ if __name__ == '__main__':
 				arg_labels = functions.get_arg_labels(bin_op)
 				if len(arg_labels) != 2: err('TypeError: '
 					f'{bin_op!r} does not take 2 arguments')
-				# if label_size(arg_labels[1]) < label_size(label):
+				# if labels.get_size(arg_labels[1]) < labels.get_size(label):
 				# 	err(f'TypeError: Incompatible size for {bin_op!r}')
 				functions.call(bin_op,
 					(Register(b_label, 'a'), Register(label, 'c')))

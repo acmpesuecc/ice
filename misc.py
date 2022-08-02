@@ -1,4 +1,3 @@
-import compiler
 from labels import get_size as label_size
 from sys import argv
 
@@ -44,6 +43,7 @@ binary = {
 }
 
 def err(msg):
+	import compiler
 	print(f'File "{argv[1]}", line {compiler.line_no}')
 	print('   ', compiler.line.strip())
 	if compiler.debug: raise RuntimeError(repr(msg))

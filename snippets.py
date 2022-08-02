@@ -1,5 +1,6 @@
 import Patterns
 from misc import get_reg, err
+import labels
 
 def set_output(new_output):
 	global output
@@ -82,12 +83,12 @@ def insert(enc_name, args = (), p = None, e = None, match_args = True):
 				err(f'Error: tail required in {dline!r}')
 			elif tail == 'R':  sub = arg.name
 			elif tail == 'E':  sub = arg.enc_name
-			elif tail == 'L':  sub = str(get_length(label))
+			elif tail == 'L':  sub = str(labels.get_length(label))
 
 			elif tail == 'S':  sub = size_list[arg.size_n]
 			elif tail == 'C':  sub = arg.get_clause()
-			elif tail == 'N':  sub = str(label_size(label))
-			elif tail == 'U':  sub = str(element_size(label))
+			elif tail == 'N':  sub = str(labels.get_size(label))
+			elif tail == 'U':  sub = str(labels.element_size(label))
 			elif match['reg']: sub = get_reg(tail, arg.size_n)
 			else: continue
 

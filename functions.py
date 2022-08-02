@@ -7,6 +7,10 @@ def set_output(new_output):
 	global output
 	output = new_output
 
+def set_functions(new_functions):
+	global functions
+	functions = new_functions
+
 def encode(label, op):
 	# check if label has that method?
 	enc_op = op.replace('_', '__')
