@@ -1,6 +1,8 @@
 import Patterns
 import functions
-from misc import get_reg, err, Literal, Register
+from misc import get_reg, err
+from misc import Literal, Register
+from misc import size_list
 import labels
 
 def set_output(new_output):
@@ -38,7 +40,7 @@ def decode_args(arg_labels, p, e) -> list[str]:
 	# TODO: add support for dynamic arrays
 
 	if p == '*': p = '6'
-	elif e: p = int(p[1:-1]); e = str(label_size(e))
+	elif e: p = int(p[1:-1]); e = str(labels.get_size(e))
 	for i, size_n in enumerate(arg_labels):
 		if   size_n == 's': arg_labels[i] = p
 		elif size_n == 'e': arg_labels[i] = e
@@ -73,7 +75,6 @@ def insert(enc_name, args = (), p = None, e = None, match_args = True):
 			subject = args[int(subject)]
 			rec_args = [subject]
 
-			print(f'{subject = }, {method =}, {argstr = }')
 			enc_op = functions.encode(subject.get_label(), method)
 			arg_labels = functions.get_arg_labels(enc_op)
 			for arg, arg_label in zip(argstr.split(','), arg_labels):

@@ -39,34 +39,6 @@ _p_str: db `%s`, 0
 _p_strln: db `%s\n`, 0
 ;
 
-; _dprint_lnxs void 6
-mov  rsi, _name_%0R
-mov  rdi, qword [%0E]
-xor  rax, rax
-call printf
-;
-
-; _dprint_wins void 6
-mov  rcx, _name_%0R
-mov  rdx, qword [%0E]
-xor  rax, rax
-call printf
-;
-
-; _dprint_lnx void 6
-mov  rsi, _name_%0R
-mov  rdi, qword [%0E]
-xor  rax, rax
-call printf
-;
-
-; _dprint_win void 6
-mov  rcx, _name_%0R
-mov  rdx, qword [%0E]
-xor  rax, rax
-call printf
-;
-
 ; _exit void
 xor rcx, rcx
 push rbp
@@ -114,6 +86,7 @@ mov %0a, %0d
 ; _udstr *3 s
 mov rcx, _str
 mov rdx, _fmt_udstr
+xor r8, r8
 mov %0r8, %0C
 push rbp
 call sprintf
@@ -144,6 +117,10 @@ mov rax, %0E
 mov rax, %0E
 ;
 
+; _adref *$s s
+mov rax, %0E
+;
+
 ; _adgetitem $e e
 mov %1a, %1C
 mov %0a, %0S [eax * %0U + %0E]
@@ -154,6 +131,10 @@ xor rbx, rbx
 mov %1b, %1C
 mov %2a,  %2C
 mov %2S [rbx * %0U + %0E], %2a
+;
+
+; str *3 s
+%0.__str__()
 ;
 
 ; printnum void 6
@@ -179,23 +160,6 @@ pop rbp
 %0.__str__()
 mov rdx, rax
 mov rcx, _p_strln
-push rbp
-call printf
-pop rbp
-;
-
-; printstr void 6
-;; printstr void 6
-mov bl, byte [%0L*%0U + %0E - 1]
-mov byte [%0L*%0U + %0E - 1], 0
-mov rcx, %0E
-push rbp
-call printf
-pop rbp
-mov byte [%0L*%0U + %0E - 1], bl
-
-mov byte [_c], bl
-mov rcx, _c
 push rbp
 call printf
 pop rbp

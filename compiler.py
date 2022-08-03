@@ -121,7 +121,7 @@ def assign(dest, imm: Variable = None):
 		if deref: err("SyntaxError: Can't assign to multiple operations yet.")
 		fun = functions.encode(dest.get_label(), '__setitem__')
 		arg_labels = functions.get_arg_labels(fun)
-		print(f'{fun = }, {arg_labels = }, {index = }')
+		if debug: print(f'{fun = }, {arg_labels = }, {index = }')
 		
 		if index.isdigit(): index = Literal(arg_labels[1], index)
 		elif index not in variables: err(f'NameError: {index!r} not declared.')
