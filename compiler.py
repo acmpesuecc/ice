@@ -106,6 +106,93 @@ def uni_fill(uni_chain, label):
 		uni_chain[-i] = functions.encode(label, unary[uni])
 		label = functions.get_label(uni_chain[-i])
 
+def parse(exp, dest):
+	uni_chain = []
+	args = []
+	label = None
+	b_label = None
+	bin_op  = None  # remembered for use after unary operations
+
+	if debug: output(f'\n;{line_no}:', line.strip())
+	for token in Patterns.token.finditer(exp):
+		if bin_op is True: # expecting a binary operator
+			if token[0] not in binary:
+				err('SyntaxError: Expected binary operator.')
+			bin_op = functions.encode(b_label, binary[token[0]])
+			continue
+
+		if token['symbol']: # Expecting unary. Got some symbol.
+			if token['symbol'] in '["\'':
+				if bin_op or uni_chain: err('SyntaxError: '
+					'Operations not yet supported on sequence literals.')
+				return '' # sequence literals initialise right now
+			if token['symbol'] not in unary:
+				err('SyntaxError: Invalid unary operator.')
+			uni_chain.append(token['symbol'])
+			label = None
+			continue
+
+		if token['label']:
+			label = token['label']; uni_fill(uni_chain, label); continue
+
+
+		if uni_chain:
+			assert label or not uni_chain[-1].isidentifier()
+			assert not label or uni_chain[-1].isidentifier()
+
+		# Decode token
+		args = []
+		enc_op = None
+		if token['args'] is not None:  # required for empty arg lists
+			if not token['method']:
+				enc_op = functions.encode('', token['subject'])
+			else:
+				var = get_var(token['subject'])
+				args.append(var)
+				enc_op = functions.encode(var.get_label(), token['method'])
+			label = functions.get_label(enc_op)
+			arg_labels = functions.get_arg_labels(enc_op)[len(args):]
+			for arg, arg_label in zip(token['args'].split(','), arg_labels):
+				args.append(get_var(arg.strip(), arg_label))
+		elif token['item']:
+			var = get_var(token['subject'])
+			enc_op = functions.encode(var.get_label(), '__getitem__')
+			label = functions.get_label(enc_op)
+			index_label = functions.get_arg_labels(enc_op)[1]
+			index = get_var(token['item'], index_label)
+			args.extend([var, index])
+		else:
+			var = get_var(token['subject'], label)
+			label = var.get_label()
+
+		uni_fill(uni_chain, label)
+
+		# Call suffixes and uni_chain.
+		if enc_op is not None: functions.call(enc_op, args)
+		elif uni_chain: functions.call(uni_chain.pop(), (var,))
+		else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
+		for enc_op in reversed(uni_chain):
+			functions.call(enc_op, (Register(label, 'a'),))
+			label = functions.get_label(enc_op)
+
+		if bin_op is not None:
+			arg_labels = functions.get_arg_labels(bin_op)
+			if len(arg_labels) != 2: err('TypeError: '
+				f'{bin_op!r} does not take 2 arguments')
+			# if labels.get_size(arg_labels[1]) < labels.get_size(label):
+			# 	err(f'TypeError: Incompatible size for {bin_op!r}')
+			functions.call(bin_op,
+				(Register(b_label, 'a'), Register(label, 'c')))
+			b_label = functions.get_label(bin_op)
+		elif uni_chain: b_label = functions.get_label(uni_chain[0])
+		else: b_label = label
+
+		label = None
+		bin_op = True
+		uni_chain = []
+
+	return dest
+
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
 	match = Patterns.dest.match(dest)
@@ -269,96 +356,14 @@ if __name__ == '__main__':
 		# if debug: print(f'{line_no}:', line.strip())
 		isdecl = bool(Patterns.decl.match(dest))
 		# decl = True
-		uni_chain = []
-		args = []
-		label = None
-		b_label = None
-		bin_op  = None  # remembered for use after unary operations
+		if not isdecl and exp and exp[0] in '["\'':
+			if not isdecl: err('SyntaxError: Sequence literals '
+				'not yet supported outside declaration.')
 
-		if debug: output(f'\n;{line_no}:', line.strip())
-
-		# expression lexing (mostly cleaned up)
-		for token in Patterns.token.finditer(exp):
-			if bin_op is True: # expecting a binary operator
-				if token[0] not in binary:
-					err('SyntaxError: Expected binary operator.')
-				bin_op = functions.encode(b_label, binary[token[0]])
-				continue
-
-			if token['symbol']: # Expecting unary. Got some symbol.
-				if token['symbol'] in '["\'':
-					if bin_op or uni_chain: err('SyntaxError: '
-						'Operations not yet supported on sequence literals.')
-					if not isdecl: err('SyntaxError: Sequence literals '
-						'not yet supported outside declaration.')
-					dest = None; break # sequence literals initialise right now
-				if token['symbol'] not in unary:
-					err('SyntaxError: Invalid unary operator.')
-				uni_chain.append(token['symbol'])
-				label = None
-				continue
-
-			if token['label']:
-				label = token['label']; uni_fill(uni_chain, label); continue
-
-
-			if uni_chain:
-				assert label or not uni_chain[-1].isidentifier()
-				assert not label or uni_chain[-1].isidentifier()
-
-			# Decode token
-			args = []
-			enc_op = None
-			if token['args'] is not None:  # required for empty arg lists
-				if not token['method']:
-					enc_op = functions.encode('', token['subject'])
-				else:
-					var = get_var(token['subject'])
-					args.append(var)
-					enc_op = functions.encode(var.get_label(), token['method'])
-				label = functions.get_label(enc_op)
-				arg_labels = functions.get_arg_labels(enc_op)[len(args):]
-				for arg, arg_label in zip(token['args'].split(','), arg_labels):
-					args.append(get_var(arg.strip(), arg_label))
-			elif token['item']:
-				var = get_var(token['subject'])
-				enc_op = functions.encode(var.get_label(), '__getitem__')
-				label = functions.get_label(enc_op)
-				index_label = functions.get_arg_labels(enc_op)[1]
-				index = get_var(token['item'], index_label)
-				args.extend([var, index])
-			else:
-				var = get_var(token['subject'], label)
-				label = var.get_label()
-
-			uni_fill(uni_chain, label)
-
-			# Call suffixes and uni_chain.
-			if enc_op is not None: functions.call(enc_op, args)
-			elif uni_chain: functions.call(uni_chain.pop(), (var,))
-			else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
-			for enc_op in reversed(uni_chain):
-				functions.call(enc_op, (Register(label, 'a'),))
-				label = functions.get_label(enc_op)
-
-			if bin_op is not None:
-				arg_labels = functions.get_arg_labels(bin_op)
-				if len(arg_labels) != 2: err('TypeError: '
-					f'{bin_op!r} does not take 2 arguments')
-				# if labels.get_size(arg_labels[1]) < labels.get_size(label):
-				# 	err(f'TypeError: Incompatible size for {bin_op!r}')
-				functions.call(bin_op,
-					(Register(b_label, 'a'), Register(label, 'c')))
-				b_label = functions.get_label(bin_op)
-			elif uni_chain: b_label = functions.get_label(uni_chain[0])
-			else: b_label = label
-
-			label = None
-			bin_op = True
-			uni_chain = []
+		dest = parse(exp, dest)
 
 		# for no op (and for assignment also maybe?) check `label is None`
-		if not dest: continue
+		if dest is '': continue
 		elif not exp: err('SyntaxError: Expected an expression.')
 		else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
 		output()
