@@ -56,32 +56,51 @@ not %0a
 ;
 
 ; _udadd $s s s
-mov %0a, %0C
-add %1a, %1C
+mov %0b, %0C
+add %1b, %1C
+mov rax, rbx
 ;
 
 ; _udsub $s s s
-mov %0a, %0C
-sub %1a, %1C
+mov %0b, %0C
+sub %1b, %1C
+mov rax, rbx
 ;
 
 ; _udmul $s s s
+mov %1b, %1C
 mov %0a, %0C
-mul %1C
+mul %1b
 ;
 
 ; _udtruediv $s s s
 xor rdx, rdx
+mov %1b, %1C
 mov %0a, %0C
-div %1C
+div %1b
 ;
 
 ; _udmod $s s s
 xor rdx, rdx
+mov %1b, %1C
 mov %0a, %0C
-div %1C
+div %1b
+mov %0a, %0d
 mov %0a, %0d
 ;
+
+; _udgt 3 s s
+mov %0b, %0C
+cmp %1b, %1C
+setg al
+;
+
+; _udlt 3 s s
+mov %0b, %0C
+cmp %1b, %1C
+setl al
+;
+
 
 ; _udstr *3 s
 mov rcx, _str
@@ -100,6 +119,23 @@ mov rax, %0C
 
 ; _adstr *3 6
 mov rax, %0E
+;
+
+
+; _udbool 3 s
+test %0C, -1
+setnz al
+;
+
+; _pdbool 3 6
+test %0C, -1
+setnz al
+;
+
+; _adbool 3 s
+mov rax, %0L
+test rax, -1
+setnz al
 ;
 
 ; _pdderef $e 6
@@ -169,16 +205,18 @@ call printf
 pop rbp
 ;
 
-; _ctrl_while_precond void 6
+;; might not be necessary, but this way it's customizable
+; _while_precond void 6
 .L%0R:
 ;
 
-; _ctrl_while_postcond void 3 6
-%0.__bool__()
-jz .L%1R_end
+; _while_postcond void 3 6
+%1.__bool__()
+test al, al
+jz .L%0R_end
 ;
 
-; _ctrl_while_end void 6
+; _while_end void 6
 jmp .L%0R
 .L%0R_end:
 ;

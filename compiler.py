@@ -25,6 +25,9 @@ def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
 functions.set_output(output)
 snippets.set_output(output)
 
+variables = {}
+keywords = {'while', 'endwhile'}
+
 if Shared.debug:
 	Shared.line_no = 0
 	Shared.line = '[DEBUG] *Empty line*'
@@ -104,12 +107,13 @@ def uni_fill(uni_chain, label):
 		uni_chain[-i] = functions.encode(label, unary[uni])
 		label = functions.get_label(uni_chain[-i])
 
-def parse(exp):
+def parse(exp) -> 'size_n':
 	uni_chain = []
 	args = []
 	label = None
 	b_label = None
 	bin_op  = None  # remembered for use after unary operations
+	size_n  = 0
 
 	if Shared.debug: output(f'\n;{Shared.line_no}:', Shared.line.strip())
 	for token in Patterns.token.finditer(exp):
@@ -138,6 +142,9 @@ def parse(exp):
 			assert not label or uni_chain[-1].isidentifier()
 
 		# Decode token
+		if token['subject'] in keywords:
+			err(f'Keyword {token["subject"]!r} not allowed in expression.')
+
 		args = []
 		enc_op = None
 		if token['args'] is not None:  # required for empty arg lists
@@ -180,7 +187,7 @@ def parse(exp):
 			# if labels.get_size(arg_labels[1]) < labels.get_size(label):
 			# 	err(f'TypeError: Incompatible size for {bin_op!r}')
 			functions.call(bin_op,
-				(Register(b_label, 'a'), Register(label, 'c')))
+				(Register(b_label, 'c'), Register(label, 'a')))
 			b_label = functions.get_label(bin_op)
 		elif uni_chain: b_label = functions.get_label(uni_chain[0])
 		else: b_label = label
@@ -188,6 +195,8 @@ def parse(exp):
 		label = None
 		bin_op = True
 		uni_chain = []
+
+	return labels.get_size_n(b_label)
 
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
@@ -224,8 +233,6 @@ def assign(dest, imm: Variable = None):
 
 	output(f"mov {dest.get_clause()}, {imm or get_reg('a', dest.size_n)}")
 
-variables = {}
-
 if __name__ == '__main__':
 	snippets.insert('_header')
 
@@ -234,6 +241,8 @@ if __name__ == '__main__':
 	output('\nsegment .bss')
 	for Shared.line_no, Shared.line in enumerate(infile, 1):
 		stmt = Patterns.stmt.match(Shared.line)[0].strip()
+		if Patterns.keywords.match(stmt): continue
+
 		lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
 		lhs = lhs.strip()
 		decls = lhs.split()
@@ -338,11 +347,29 @@ if __name__ == '__main__':
 
 	# Writing to the text segment
 
+	ctrl_no = 0
+	ctrl_stack = []
+
 	infile.seek(0)
 	output('\nsegment .text')
 	output('main:')
 	for Shared.line_no, Shared.line in enumerate(infile, 1):
 		Shared.line = Patterns.stmt.match(Shared.line)[0]
+
+		kw = Patterns.keywords.match(Shared.line)
+		if kw:
+			if kw[1] == 'endwhile':
+				if kw[2]: err('SyntaxError: endwhile takes no expression')
+				snippets.insert('_while_end', (ctrl_stack.pop(),))
+			elif kw[1] == 'while':
+				ctrl_literal = Literal('3', str(ctrl_no))
+				snippets.insert('_while_precond', (ctrl_literal,))
+				size_n = parse(kw[2])
+				snippets.insert('_while_postcond', (ctrl_literal, Register(str(size_n), 'a')))
+				ctrl_stack.append(ctrl_literal)
+				ctrl_no += 1
+			continue
+
 		dest, _, exp = Shared.line.rpartition('=')
 		dest = dest.strip()
 		exp  = exp.strip()

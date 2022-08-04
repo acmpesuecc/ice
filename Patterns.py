@@ -14,11 +14,12 @@ token = _compile(rf'@(?P<label>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
 	r'(?:\s*(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
 	r'\[(?P<item>.*?)\]' ')?|'
 	r'(?P<symbol>\S)')
+keywords = _compile(r'\b((?:end)?while)\b(.*)')
 
 stmt  = _compile(r'(([\'"])(\\?.)*?\2|[^#])*')
 
 _reg = r'[abcd]|[ds]i|[sbi]p|r(?:8|9|1[1-5])'
-snip  = _compile(rf'%(\d+|e)([RELSCNU]|(?P<reg>{_reg}))?\b')
+snip  = _compile(rf'%(\d+|e)([RELSCNU]|(?P<reg>{_reg}))?')
 default = _compile(r'(?P<param>(?P<int>[3-6])|(?:(?P<arr>\[\d+\])|\*))'
 		# (?#|[3-6])))
 		rf'(?P<element>{_shape}(?:_?\w)*?)_(?P<method>[dm]\w*)')

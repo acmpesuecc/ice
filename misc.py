@@ -1,4 +1,4 @@
-from labels import get_size as label_size
+import labels
 from sys import argv
 
 # String States
@@ -36,10 +36,14 @@ binary = {
 	'*' : '__mul__',
 	'%' : '__mod__',
 	'/' : '__truediv__',
+	'<':  '__lt__',
+	'>':  '__gt__',
 	# '//': '__floordiv__',
 	# '**': '__pow__',
 	# '<<': '__lshift__',
 	# '>>': '__rshift__',
+	# '<=': '__le__',
+	# '>=': '__ge__',
 }
 
 def err(msg):
@@ -73,15 +77,14 @@ class Variable:
 	def __init__(self, label, name):
 		self.name = name
 		self.init = None
-		self.size = label_size(label)
-		if self.size in {1, 2, 4, 8}: self.size_n = self.size.bit_length()+2
-		else: self.size_n = 0
+		self.size = labels.get_size(label)
+		self.size_n = labels.get_size_n(label)
 		self.enc_name = self.encode()
 		self.labels = [label]
 
 	def __repr__(self):
 		return f'{type(self).__name__}(@{self.get_label()} {self.name}, '\
-			f'size = {self.size}, size_n = {self.size_n})'
+			f'size = {self.size})'
 
 	def encode(self):
 		# enc_name = self.name.replace('_', '__')
