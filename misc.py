@@ -43,10 +43,9 @@ binary = {
 }
 
 def err(msg):
-	import compiler
-	print(f'File "{argv[1]}", line {compiler.line_no}')
-	print('   ', compiler.line.strip())
-	if compiler.debug: raise RuntimeError(repr(msg))
+	print(f'File "{argv[1]}", line {Shared.line_no}')
+	print('   ', Shared.line.strip())
+	if Shared.debug: raise RuntimeError(repr(msg))
 
 	print(msg)
 	quit(1)
@@ -64,6 +63,11 @@ def get_reg(reg: r'[abcd]|[ds]i|[sbi]p|r(8|9|1[1-5])', size_n):
 	if size_n == 3: return reg+'l'
 	if size_n == 4: return reg
 	return 'er'[size_n-5]+reg
+
+class Shared:
+	line = '[DEBUG] ** Empty line **'
+	line_no = 0
+	debug = False
 
 class Variable:
 	def __init__(self, label, name):

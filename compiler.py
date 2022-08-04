@@ -1,11 +1,20 @@
+# Modules
+import Patterns
+from misc import *
+import labels
+import functions
+import snippets
+sfile = open('builtins.ice-snippet')
+snippets.read_snippets(sfile, crlf)
+
 from sys import argv
 
-if __name__ != '__main__': debug = True
-elif '-d' in argv: debug = True; argv.remove('-d')
-else: debug = True
+if __name__ != '__main__': Shared.debug = True
+elif '-d' in argv: Shared.debug = True; argv.remove('-d')
+else: Shared.debug = False
 
 if len(argv) <2:
-	if debug: argv.append('Tests\\refactor tester.ice')
+	if Shared.debug: argv.append('Tests\\refactor tester.ice')
 	else: print('Input file not specified'); quit(1)
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
@@ -13,25 +22,14 @@ if len(argv)<3: argv.append(name+'.asm')
 infile = open(argv[1])
 out = open(argv[2], 'w')
 def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
-
-# Modules
-import Patterns
-from misc import *
-import labels
-
-import functions
 functions.set_output(output)
-
-import snippets
 snippets.set_output(output)
-sfile = open('builtins.ice-snippet')
-snippets.read_snippets(sfile, crlf)
 
-if debug:
-	line_no = 0
-	line = '[DEBUG] *Empty line*'
+if Shared.debug:
+	Shared.line_no = 0
+	Shared.line = '[DEBUG] *Empty line*'
 	print('BUILTINS: ', *snippets.snippets)
-	
+
 	class Debug:
 		@staticmethod
 		def set_snippets(new_snippets): global snippets; snippets = new_snippets
@@ -106,14 +104,14 @@ def uni_fill(uni_chain, label):
 		uni_chain[-i] = functions.encode(label, unary[uni])
 		label = functions.get_label(uni_chain[-i])
 
-def parse(exp, dest):
+def parse(exp):
 	uni_chain = []
 	args = []
 	label = None
 	b_label = None
 	bin_op  = None  # remembered for use after unary operations
 
-	if debug: output(f'\n;{line_no}:', line.strip())
+	if Shared.debug: output(f'\n;{Shared.line_no}:', Shared.line.strip())
 	for token in Patterns.token.finditer(exp):
 		if bin_op is True: # expecting a binary operator
 			if token[0] not in binary:
@@ -125,7 +123,6 @@ def parse(exp, dest):
 			if token['symbol'] in '["\'':
 				if bin_op or uni_chain: err('SyntaxError: '
 					'Operations not yet supported on sequence literals.')
-				return '' # sequence literals initialise right now
 			if token['symbol'] not in unary:
 				err('SyntaxError: Invalid unary operator.')
 			uni_chain.append(token['symbol'])
@@ -168,6 +165,7 @@ def parse(exp, dest):
 		uni_fill(uni_chain, label)
 
 		# Call suffixes and uni_chain.
+		if bin_op: output('mov rcx, rax')
 		if enc_op is not None: functions.call(enc_op, args)
 		elif uni_chain: functions.call(uni_chain.pop(), (var,))
 		else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
@@ -191,8 +189,6 @@ def parse(exp, dest):
 		bin_op = True
 		uni_chain = []
 
-	return dest
-
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
 	match = Patterns.dest.match(dest)
@@ -208,7 +204,7 @@ def assign(dest, imm: Variable = None):
 		if deref: err("SyntaxError: Can't assign to multiple operations yet.")
 		fun = functions.encode(dest.get_label(), '__setitem__')
 		arg_labels = functions.get_arg_labels(fun)
-		if debug: print(f'{fun = }, {arg_labels = }, {index = }')
+		if Shared.debug: print(f'{fun = }, {arg_labels = }, {index = }')
 		
 		if index.isdigit(): index = Literal(arg_labels[1], index)
 		elif index not in variables: err(f'NameError: {index!r} not declared.')
@@ -236,8 +232,8 @@ if __name__ == '__main__':
 	# Writing to bss segment
 
 	output('\nsegment .bss')
-	for line_no, line in enumerate(infile, 1):
-		stmt = Patterns.stmt.match(line)[0].strip()
+	for Shared.line_no, Shared.line in enumerate(infile, 1):
+		stmt = Patterns.stmt.match(Shared.line)[0].strip()
 		lhs, *rhs = Patterns.equal.split(stmt, maxsplit = 1)
 		lhs = lhs.strip()
 		decls = lhs.split()
@@ -324,46 +320,45 @@ if __name__ == '__main__':
 
 	# Writing to the data segment
 
-	if debug: print('VARIABLES:', *variables.values())
+	if Shared.debug: print('VARIABLES:', *variables.values())
 
 	output()
 	snippets.insert('_data')
-	if debug: print('\nINITS:'); inits = False
+	if Shared.debug: print('\nINITS:'); inits = False
 	for var in variables.values():
 		if not var.init: continue
-		if debug: print(var.name, '=', var.init); inits = True
+		if Shared.debug: print(var.name, '=', var.init); inits = True
 
 		output(var.enc_name, end = ': db ')
 		out = repr(var.init)[12:-2].replace('`', '\\`')
 		if '\\x' not in out: output(f'`{out}`')
 		else: output(*var.init, sep = ', ')
-	if debug and not inits: print(None)
-	if debug: print()
+	if Shared.debug and not inits: print(None)
+	if Shared.debug: print()
 
 	# Writing to the text segment
 
 	infile.seek(0)
 	output('\nsegment .text')
 	output('main:')
-	for line_no, line in enumerate(infile, 1):
-		line = Patterns.stmt.match(line)[0]
-		dest, _, exp = line.rpartition('=')
+	for Shared.line_no, Shared.line in enumerate(infile, 1):
+		Shared.line = Patterns.stmt.match(Shared.line)[0]
+		dest, _, exp = Shared.line.rpartition('=')
 		dest = dest.strip()
 		exp  = exp.strip()
 
 		if not dest and Patterns.decl.match(exp): continue
-		if not line.strip(): continue
-		# if debug: print(f'{line_no}:', line.strip())
+		if not Shared.line.strip(): continue
+		# if Shared.debug: print(f'{Shared.line_no}:', Shared.line.strip())
 		isdecl = bool(Patterns.decl.match(dest))
 		# decl = True
-		if not isdecl and exp and exp[0] in '["\'':
-			if not isdecl: err('SyntaxError: Sequence literals '
-				'not yet supported outside declaration.')
-
-		dest = parse(exp, dest)
+		if not exp or exp[0] not in '["\'': parse(exp)
+		elif isdecl: dest = '' # sequence literals only initialise right now
+		else: err('SyntaxError: Sequence literals '
+			'not yet supported outside declaration.')
 
 		# for no op (and for assignment also maybe?) check `label is None`
-		if dest is '': continue
+		if dest == '': continue
 		elif not exp: err('SyntaxError: Expected an expression.')
 		else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
 		output()
