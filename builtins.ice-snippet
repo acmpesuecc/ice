@@ -164,3 +164,17 @@ push rbp
 call printf
 pop rbp
 ;
+
+; _ctrl_while_precond void 6
+.L%0R:
+;
+
+; _ctrl_while_postcond void 3 6
+%0.__bool__()
+jz .L%1R_end
+;
+
+; _ctrl_while_end void 6
+jmp .L%0R
+.L%0R_end:
+;
