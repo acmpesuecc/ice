@@ -4,14 +4,18 @@ from misc import *
 import labels
 import functions
 import snippets
-sfile = open('builtins.ice-snippet')
-snippets.read_snippets(sfile, crlf)
 
 from sys import argv
 
 if __name__ != '__main__': Shared.debug = True
 elif '-d' in argv: Shared.debug = True; argv.remove('-d')
 else: Shared.debug = False
+
+if '-lf'   in argv: crlf = False; argv.remove('-lf')
+if '-crlf' in argv: crlf = True;  argv.remove('-crlf')
+
+sfile = open('builtins.ice-snippet')
+snippets.read_snippets(sfile, crlf)
 
 if len(argv) <2:
 	if Shared.debug: argv.append('Tests\\refactor tester.ice')
