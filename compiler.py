@@ -30,7 +30,7 @@ functions.set_output(output)
 snippets.set_output(output)
 
 variables = {}
-keywords = {'while', 'endwhile'}
+keywords = {'while', 'endwhile', 'if', 'elif', 'else', 'endif'}
 
 if Shared.debug:
 	Shared.line_no = 0
@@ -353,6 +353,7 @@ if __name__ == '__main__':
 
 	ctrl_no = 0
 	ctrl_stack = []
+	branch_stack = []
 
 	infile.seek(0)
 	output('\nsegment .text')
@@ -361,37 +362,75 @@ if __name__ == '__main__':
 		Shared.line = Patterns.stmt.match(Shared.line)[0]
 
 		kw = Patterns.keywords.match(Shared.line)
-		if kw:
-			if kw[1] == 'endwhile':
-				if kw[2]: err('SyntaxError: endwhile takes no expression')
-				snippets.insert('_while_end', (ctrl_stack.pop(),))
-			elif kw[1] == 'while':
-				ctrl_literal = Literal('3', str(ctrl_no))
-				snippets.insert('_while_precond', (ctrl_literal,))
-				size_n = parse(kw[2])
-				snippets.insert('_while_postcond', (ctrl_literal, Register(str(size_n), 'a')))
-				ctrl_stack.append(ctrl_literal)
-				ctrl_no += 1
-			continue
+		if kw is None:
+			dest, _, exp = Shared.line.rpartition('=')
+			dest = dest.strip()
+			exp  = exp.strip()
 
-		dest, _, exp = Shared.line.rpartition('=')
-		dest = dest.strip()
-		exp  = exp.strip()
+			if not dest and Patterns.decl.match(exp): continue
+			if not Shared.line.strip(): continue
+			# if Shared.debug: print(f'{Shared.line_no}:', Shared.line.strip())
+			isdecl = bool(Patterns.decl.match(dest))
+			# decl = True
+			if not exp or exp[0] not in '["\'': parse(exp)
+			elif isdecl: dest = '' # sequence literals only initialise right now
+			else: err('SyntaxError: Sequence literals '
+				'not yet supported outside declaration.')
 
-		if not dest and Patterns.decl.match(exp): continue
-		if not Shared.line.strip(): continue
-		# if Shared.debug: print(f'{Shared.line_no}:', Shared.line.strip())
-		isdecl = bool(Patterns.decl.match(dest))
-		# decl = True
-		if not exp or exp[0] not in '["\'': parse(exp)
-		elif isdecl: dest = '' # sequence literals only initialise right now
-		else: err('SyntaxError: Sequence literals '
-			'not yet supported outside declaration.')
+			# for no op (and for assignment also maybe?) check `label is None`
+			if dest == '': continue
+			elif not exp: err('SyntaxError: Expected an expression.')
+			else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
 
-		# for no op (and for assignment also maybe?) check `label is None`
-		if dest == '': continue
-		elif not exp: err('SyntaxError: Expected an expression.')
-		else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
+		# Keyword Statements
+
+		elif kw[1] == 'while':
+			ctrl_literal = Literal('3', str(ctrl_no))
+			snippets.insert('_while_precond', (ctrl_literal,))
+			size_n = parse(kw[2])
+			snippets.insert('_while_postcond',
+				(ctrl_literal, Register(str(size_n), 'a')))
+			ctrl_stack.append(ctrl_literal)
+			ctrl_no += 1
+		elif kw[1] == 'endwhile':
+			if kw[2]: err('SyntaxError: endwhile takes no expression')
+			snippets.insert('_while_end', (ctrl_stack.pop(),))
+
+		elif kw[1] == 'if':
+			ctrl_literal = Literal('3', str(ctrl_no))
+			branch_literal = Literal('3', '0')
+			size_n = parse(kw[2])
+			snippets.insert('_if',(
+				ctrl_literal,
+				branch_literal,
+				Register(str(size_n), 'a')
+			))
+			ctrl_stack.append(ctrl_literal)
+			branch_stack.append(branch_literal)
+			ctrl_no += 1
+		elif kw[1] == 'elif':
+			ctrl_literal = ctrl_stack[-1]
+			branch_literal = branch_stack[-1]
+			snippets.insert('_else', (
+				ctrl_literal,
+				branch_literal
+			))
+			size_n = parse(kw[2])
+			branch_literal.name = str(int(branch_literal.name)+1)
+			snippets.insert('_if', (
+				ctrl_literal,
+				branch_literal,
+				Register(str(size_n), 'a')
+			))
+		elif kw[1] == 'else':
+			if kw[2]: err('SyntaxError: else takes no expression')
+			ctrl_literal = ctrl_stack[-1]
+			branch_literal = branch_stack[-1]
+			snippets.insert('_else', (ctrl_literal, branch_stack[-1]))
+			branch_literal.name = str(int(branch_literal.name)+1)
+		elif kw[1] == 'endif':
+			if kw[2]: err('SyntaxError: endif takes no expression')
+			snippets.insert('_if_end', (ctrl_stack.pop(), branch_stack.pop()))
 		output()
 
 	snippets.insert('_exit')

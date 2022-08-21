@@ -14,7 +14,7 @@ token = _compile(rf'@(?P<label>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
 	r'(?:\s*(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
 	r'\[(?P<item>.*?)\]' ')?|'
 	r'(?P<symbol>\S)')
-keywords = _compile(r'\b((?:end)?while)\b(.*)')
+keywords = _compile(r'\s*\b((?:end)?(?:while|if)|elif|else)\b(.*)')
 
 stmt  = _compile(r'(([\'"])(\\?.)*?\2|[^#])*')
 

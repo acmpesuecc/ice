@@ -34,7 +34,7 @@ _p: db `%u\n`, 0
 _c: db 0, 0
 _ln: db 0, 10, 0
 _fmt_udstr: db `%llu`, 0
-_str: times 3 dq 0
+_str: dq 0, 0, 0
 _p_str: db `%s`, 0
 _p_strln: db `%s\n`, 0
 ;
@@ -205,7 +205,9 @@ call printf
 pop rbp
 ;
 
-;; might not be necessary, but this way it's customizable
+;; Control Structures
+
+;; Single label. Might not be necessary, but this way it's customizable.
 ; _while_precond void 6
 .L%0R:
 ;
@@ -218,5 +220,22 @@ jz .L%0R_end
 
 ; _while_end void 6
 jmp .L%0R
+.L%0R_end:
+;
+
+;; label number, branch number, argument
+; _if void 3 3 6
+%2.__bool__()
+test al, al
+jz .L%0R_%1R_else
+;
+
+; _else void 3 3
+jmp .L%0R_end
+.L%0R_%1R_else:
+;
+
+;  _if_end void 3 3
+.L%0R_%1R_else:
 .L%0R_end:
 ;
