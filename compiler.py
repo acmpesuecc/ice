@@ -30,7 +30,7 @@ functions.set_output(output)
 snippets.set_output(output)
 
 variables = {}
-keywords = {'while', 'endwhile', 'if', 'elif', 'else', 'endif'}
+keywords = {'while', 'if', 'elif', 'else', 'end'}
 
 if Shared.debug:
 	Shared.line_no = 0
@@ -391,10 +391,8 @@ if __name__ == '__main__':
 			snippets.insert('_while_postcond',
 				(ctrl_literal, Register(str(size_n), 'a')))
 			ctrl_stack.append(ctrl_literal)
+			branch_stack.append(WHILE_BRANCH)
 			ctrl_no += 1
-		elif kw[1] == 'endwhile':
-			if kw[2]: err('SyntaxError: endwhile takes no expression')
-			snippets.insert('_while_end', (ctrl_stack.pop(),))
 
 		elif kw[1] == 'if':
 			ctrl_literal = Literal('3', str(ctrl_no))
@@ -428,9 +426,13 @@ if __name__ == '__main__':
 			branch_literal = branch_stack[-1]
 			snippets.insert('_else', (ctrl_literal, branch_stack[-1]))
 			branch_literal.name = str(int(branch_literal.name)+1)
-		elif kw[1] == 'endif':
-			if kw[2]: err('SyntaxError: endif takes no expression')
-			snippets.insert('_if_end', (ctrl_stack.pop(), branch_stack.pop()))
+
+		elif kw[1] == 'end':
+			if kw[2]: err('SyntaxError: end takes no expression')
+			branch_literal = branch_stack.pop()
+			if branch_literal is WHILE_BRANCH:
+				snippets.insert('_while_end', (ctrl_stack.pop(),))
+			else: snippets.insert('_if_end', (ctrl_stack.pop(), branch_literal))
 		output()
 
 	snippets.insert('_exit')

@@ -103,6 +103,11 @@ cmp %1b, %1C
 setl al
 ;
 
+; _udand $s s s
+mov %0b, %0C
+and %1b, %1C
+mov rax, rbx
+;
 
 ; _udstr *3 s
 mov rcx, _str

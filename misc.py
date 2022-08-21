@@ -3,6 +3,7 @@ from sys import argv
 
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
+WHILE_BRANCH = -1
 
 import os
 crlf = int(os.name == 'nt')
