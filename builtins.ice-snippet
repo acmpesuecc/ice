@@ -90,12 +90,14 @@ mov %0a, %0d
 ;
 
 ; _udgt 3 s s
+xor rbx, rbx
 mov %0b, %0C
 cmp %1b, %1C
 setg al
 ;
 
 ; _udlt 3 s s
+xor rbx, rbx
 mov %0b, %0C
 cmp %1b, %1C
 setl al
