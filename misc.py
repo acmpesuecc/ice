@@ -3,7 +3,7 @@ from sys import argv
 
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
-WHILE_BRANCH = -1
+WHILE_BRANCH = type('WHILE_BRANCH', (), {'__repr__': lambda s: '<WHILE_BRANCH>'})()
 
 import os
 crlf = int(os.name == 'nt')
@@ -14,6 +14,9 @@ reg_list  = [' l', ' l', ' l', ' l', ' x', 'ex', 'rx']
 
 arg_regs = ['di', 'si', 'c', 'd', 'r8', 'r9']
 if os.name == 'nt': arg_regs = arg_regs[2:]
+
+elses = {'elif', 'else'}
+keywords = {'while', 'if', *elses}
 
 escape_sequences = {
 	'a':'\a','n':'\n','f':'\f','t':'\t','v':'\v','r':'\r',

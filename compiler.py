@@ -30,7 +30,6 @@ functions.set_output(output)
 snippets.set_output(output)
 
 variables = {}
-keywords = {'while', 'if', 'elif', 'else', 'end'}
 
 if Shared.debug:
 	Shared.line_no = 0
@@ -237,6 +236,16 @@ def assign(dest, imm: Variable = None):
 
 	output(f"mov {dest.get_clause()}, {imm or get_reg('a', dest.size_n)}")
 
+def dedent(indent_stack, branch_stack, ladder_stack, end = True):
+	indent_stack.pop()
+	if not end: return
+	branch_id = branch_stack.pop()
+	if branch_id is WHILE_BRANCH:
+		snippets.insert('_while_end', (ladder_stack.pop(),))
+	else:
+		snippets.insert('_if_end', (ladder_stack.pop(), branch_id))
+	if Shared.debug: print(f'DEDENT: {ladder_stack = }, {branch_stack = }')
+
 if __name__ == '__main__':
 	snippets.insert('_header')
 
@@ -351,24 +360,63 @@ if __name__ == '__main__':
 
 	# Writing to the text segment
 
-	ctrl_no = 0
-	ctrl_stack = []
+	next_ladder_id = 0
+	ladder_stack = []
 	branch_stack = []
+
+	indent_stack = ['']
+	prev_indent  = ''
+	expect_indent = False
 
 	infile.seek(0)
 	output('\nsegment .text')
 	output('main:')
 	for Shared.line_no, Shared.line in enumerate(infile, 1):
-		Shared.line = Patterns.stmt.match(Shared.line)[0]
+		match = Patterns.stmt.match(Shared.line)
+		if not match: err('SyntaxError: EOL in string')  # only possibility?
+
+		curr_indent, Shared.line = match[1], match[2]
+		if not Shared.line.rstrip(): continue
 
 		kw = Patterns.keywords.match(Shared.line)
+
+		if expect_indent:
+			if (curr_indent == prev_indent
+				or not curr_indent.startswith(prev_indent)):
+				err('IndentationError: Expected indent block.')
+			indent_stack.append(curr_indent)
+			expect_indent = False
+		elif curr_indent != prev_indent:
+			for dedents, indent in enumerate(reversed(indent_stack), 0):
+				if curr_indent == indent: break
+			else: err('IndentationError: '
+				'Current indentation does not match any outer indentation')
+
+			if Shared.debug: print('Multiple dedents:',
+				f'{len(branch_stack) = }',
+				f'{len(ladder_stack) = }',
+				f'{dedents = }',
+			)
+			for i in range(dedents-1):
+				dedent(indent_stack, branch_stack, ladder_stack)
+			if Shared.debug: print('One more dedent',
+				f'{len(branch_stack) = }',
+				f'{len(ladder_stack) = }',
+			)
+			dedent(indent_stack, branch_stack, ladder_stack,
+				end = not (kw and kw[1] in elses))
+
+		if Shared.debug: print(f'INDENT UPDATE: {indent_stack = } '
+			f' from {prev_indent!r} to {curr_indent!r}')
+		prev_indent = curr_indent
+
+
 		if kw is None:
 			dest, _, exp = Shared.line.rpartition('=')
 			dest = dest.strip()
 			exp  = exp.strip()
 
 			if not dest and Patterns.decl.match(exp): continue
-			if not Shared.line.strip(): continue
 			# if Shared.debug: print(f'{Shared.line_no}:', Shared.line.strip())
 			isdecl = bool(Patterns.decl.match(dest))
 			# decl = True
@@ -381,59 +429,72 @@ if __name__ == '__main__':
 			if dest == '': continue
 			elif not exp: err('SyntaxError: Expected an expression.')
 			else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
+			continue
 
 		# Keyword Statements
 
-		elif kw[1] == 'while':
-			ctrl_literal = Literal('3', str(ctrl_no))
-			snippets.insert('_while_precond', (ctrl_literal,))
+		if   kw[1] == 'while':
+			if not kw[2]: err('SyntaxError: no condition given in while')
+			ladder_id = Literal('3', str(next_ladder_id))
+			snippets.insert('_while_precond', (ladder_id,))
 			size_n = parse(kw[2])
 			snippets.insert('_while_postcond',
-				(ctrl_literal, Register(str(size_n), 'a')))
-			ctrl_stack.append(ctrl_literal)
+				(ladder_id, Register(str(size_n), 'a')))
+			ladder_stack.append(ladder_id)
 			branch_stack.append(WHILE_BRANCH)
-			ctrl_no += 1
-
+			next_ladder_id += 1
+			if Shared.debug:
+				print(f'while: {ladder_stack = }, {branch_stack = }')
 		elif kw[1] == 'if':
-			ctrl_literal = Literal('3', str(ctrl_no))
-			branch_literal = Literal('3', '0')
+			if not kw[2]: err('SyntaxError: no condition given in if')
+			ladder_id = Literal('3', str(next_ladder_id))
+			branch_id = Literal('3', '0')
 			size_n = parse(kw[2])
 			snippets.insert('_if',(
-				ctrl_literal,
-				branch_literal,
-				Register(str(size_n), 'a')
-			))
-			ctrl_stack.append(ctrl_literal)
-			branch_stack.append(branch_literal)
-			ctrl_no += 1
+				ladder_id, branch_id, Register(str(size_n), 'a')))
+			ladder_stack.append(ladder_id)
+			branch_stack.append(branch_id)
+			next_ladder_id += 1
+			if Shared.debug:
+				print(f'if:    {ladder_stack = }, {branch_stack = }')
 		elif kw[1] == 'elif':
-			ctrl_literal = ctrl_stack[-1]
-			branch_literal = branch_stack[-1]
-			snippets.insert('_else', (
-				ctrl_literal,
-				branch_literal
-			))
+			ladder_id = ladder_stack[-1]
+			branch_id = branch_stack[-1]
+			if branch_id is WHILE_BRANCH:
+				err('SyntaxError: elif not allowed after while')
+			snippets.insert('_else', (ladder_id, branch_id))
 			size_n = parse(kw[2])
-			branch_literal.name = str(int(branch_literal.name)+1)
+			branch_id.name = str(int(branch_id.name)+1)
 			snippets.insert('_if', (
-				ctrl_literal,
-				branch_literal,
-				Register(str(size_n), 'a')
-			))
+				ladder_id, branch_id, Register(str(size_n), 'a')))
+			if Shared.debug:
+				print(f'elif:  {ladder_stack = }, {branch_stack = }')
 		elif kw[1] == 'else':
 			if kw[2]: err('SyntaxError: else takes no expression')
-			ctrl_literal = ctrl_stack[-1]
-			branch_literal = branch_stack[-1]
-			snippets.insert('_else', (ctrl_literal, branch_stack[-1]))
-			branch_literal.name = str(int(branch_literal.name)+1)
+			ladder_id = ladder_stack[-1]
+			branch_id = branch_stack[-1]
+			if branch_id is WHILE_BRANCH:
+				err('SyntaxError: else not yet supported after while')
+				snippets.insert('_while_else', (ladder_id,))
+			# else: snippets.insert('_if_else', (ladder_id, branch_id))
+			else: snippets.insert('_else', (ladder_id, branch_id))
+			branch_id.name = str(int(branch_id.name)+1)
+			if Shared.debug:
+				print(f'else:  {ladder_stack = }, {branch_stack = }')
+		else:
+			# return, break, continue etc. those that don't end with ':'
+			...
+			output()
+			continue
+		if not kw[3]: err(f'SyntaxError: Colon required at the end of {kw[1]}')
+		expect_indent = True
 
-		elif kw[1] == 'end':
-			if kw[2]: err('SyntaxError: end takes no expression')
-			branch_literal = branch_stack.pop()
-			if branch_literal is WHILE_BRANCH:
-				snippets.insert('_while_end', (ctrl_stack.pop(),))
-			else: snippets.insert('_if_end', (ctrl_stack.pop(), branch_literal))
 		output()
+
+	if expect_indent:
+		err('IndentationError: Expected indentation, got EOF instead.')
+	while len(indent_stack) > 1:
+		dedent(indent_stack, branch_stack, ladder_stack)
 
 	snippets.insert('_exit')
 
