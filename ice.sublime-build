@@ -1,5 +1,26 @@
 {
-	"cmd": ["py", "compiler.py", "$file"],
-	"file_regex": "File \"(...*?)\", line ([0-9]+)",
-	"selector": "source.ice"
+	// "cmd": ["python", "compiler.py", "$file"],
+	"shell_cmd": "python compiler.py \"$file\" && nasm \"${file_path}\\\\${file_base_name}.asm\" -f win64 -o \"${file_path}\\\\${file_base_name}.o\" && gcc-asm \"${file_path}\\\\${file_base_name}.o\" -o \"${file_path}\\\\${file_base_name}.exe\"",
+	"file_regex": "File \"(...*?)\", line ([0-9]*)",
+	"selector": "source.ice",
+	"working_dir": "<PATH TO THE REPO FOLDER>",
+	"variants":
+	[
+		{
+			"name": "Run",
+			"shell_cmd": "$file_path\\\\${file_base_name}.exe",
+		}, {
+			"name": "Debug",
+			"shell_cmd": "python compiler.py \"$file\" -d"
+		}, {
+			"name": "Build & Run",
+			"shell_cmd": "python compiler.py \"$file\" && nasm \"${file_path}\\\\${file_base_name}.asm\" -f win64 -o \"${file_path}\\\\${file_base_name}.o\" && gcc-asm \"${file_path}\\\\${file_base_name}.o\" -o \"${file_path}\\\\${file_base_name}.exe\" && \"${file_path}\\\\${file_base_name}\""
+		}, {
+			"name": "Assemble",
+			"shell_cmd": "nasm \"${file_path}\\\\${file_base_name}.asm\" -f win64 -o \"${file_path}\\\\${file_base_name}.o\" && gcc-asm \"${file_path}\\\\${file_base_name}.o\" -o \"${file_path}\\\\${file_base_name}.exe\"",
+		},{
+			"name": "Assemble & Run",
+			"shell_cmd": "nasm \"${file_path}\\\\${file_base_name}.asm\" -f win64 -o \"${file_path}\\\\${file_base_name}.o\" && gcc-asm \"${file_path}\\\\${file_base_name}.o\" -o \"${file_path}\\\\${file_base_name}.exe\" && \"${file_path}\\\\${file_base_name}\""
+		}
+	]
 }
