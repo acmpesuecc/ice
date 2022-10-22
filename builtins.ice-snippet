@@ -246,3 +246,7 @@ jmp .L%0R_end
 .L%0R_%1R_else:
 .L%0R_end:
 ;
+
+; str_dstr *3 s
+mov rax, %0C
+;
