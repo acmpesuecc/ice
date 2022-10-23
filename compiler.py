@@ -419,17 +419,14 @@ if __name__ == '__main__':
 			if not dest and Patterns.decl.match(exp): continue
 			# if Shared.debug: print(f'{Shared.line_no}:', Shared.line.strip())
 			decl = Patterns.decl.match(dest)
-			if not exp or exp[0] not in '["\'': parse(exp)
-			elif decl:
-				# label reassignment only works if no exp rn
 
-				dest = '' # sequence literals only initialise right now
-
+			if decl:
 				var = get_var(decl[3])
 				label = decl[2] or decl[1]
-
 				var.labels[-1] = label
 
+			if not exp or exp[0] not in '["\'': parse(exp)
+			elif decl: dest = '' # sequence literals only initialise right now
 			else: err('SyntaxError: Sequence literals '
 				'not yet supported outside declaration.')
 
