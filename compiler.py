@@ -102,7 +102,14 @@ def declare(label, name, init = None):
 		var.init = init
 
 def get_var(name, label = None):
-	if name.isdigit(): return Literal(label or '6', name)
+	if name.isdigit():
+		size_n = (int(name).bit_length()-1).bit_length()
+		if size_n > 6: err(f'ValueError: Literal too big to fit in 64 bits.')
+		if label and labels.get_size_n(label) < size_n:
+			err(f'TypeError: Overflow for cast of {name} to label {label!r}')
+		return Literal(label or str(max(3, size_n)), name)
+	if not name.isidentifier():
+		err(f'SyntaxError: {name!r} is not a valid identifier.')
 	if name not in variables: err(f'NameError: {name!r} not declared.')
 	return variables[name]
 
@@ -112,10 +119,10 @@ def uni_fill(uni_chain, label):
 		uni_chain[-i] = functions.encode(label, unary[uni])
 		label = functions.get_label(uni_chain[-i])
 
-def parse(exp) -> 'size_n':
+def parse(exp) -> ('size_n', 'imm'):
 	uni_chain = []
 	args = []
-	label = None
+	label   = None
 	b_label = None
 	bin_op  = None  # remembered for use after unary operations
 	size_n  = 0
@@ -150,6 +157,7 @@ def parse(exp) -> 'size_n':
 			err(f'Keyword {token["subject"]!r} not allowed in expression.')
 
 		args = []
+		imm = None
 		enc_op = None
 		if token['args'] is not None:  # required for empty arg lists
 			if not token['method']:
@@ -181,6 +189,7 @@ def parse(exp) -> 'size_n':
 			var = get_var(token['subject'], label)
 			if var.get_label() is None:
 				err(f'NameError: {var.name!r} is not yet declared.')
+			if isinstance(var, Literal): imm = var
 			label = var.get_label()
 
 		uni_fill(uni_chain, label)
@@ -198,8 +207,10 @@ def parse(exp) -> 'size_n':
 			arg_labels = functions.get_arg_labels(bin_op)
 			if len(arg_labels) != 2: err('TypeError: '
 				f'{bin_op!r} does not take 2 arguments')
-			# if labels.get_size(arg_labels[1]) < labels.get_size(label):
-			# 	err(f'TypeError: Incompatible size for {bin_op!r}')
+			if (not imm
+			  and labels.get_size_n(arg_labels[1]) > labels.get_size_n(label)):
+				err(f'TypeError: Incompatible size for {bin_op!r} '
+					f'{labels.get_size_n(arg_labels[1])} vs {labels.get_size_n(label)}')
 			functions.call(bin_op,
 				(Register(b_label, 'c'), Register(label, 'a')))
 			b_label = functions.get_label(bin_op)
@@ -212,9 +223,9 @@ def parse(exp) -> 'size_n':
 
 	if Shared.debug: print('BLABEL AFTER PARSING %r: %r' % (exp, b_label))
 	if b_label is None: return None
-	return labels.get_size_n(labels.get_size(b_label))
+	return labels.get_size_n(labels.get_size(b_label)), imm
 
-def assign(dest, imm: Variable = None):
+def assign(dest, size_n, imm: Literal = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
 	match = Patterns.dest.match(dest)
 	deref, dest, index = match[2], match[3], match[4]
@@ -241,14 +252,20 @@ def assign(dest, imm: Variable = None):
 		return
 
 	# Use __setat__ when * in dest
-	if len(deref) > 2:
-		err("SyntaxError: Can't assign to multiple dereferences yet.")
 	if deref:
+		if len(deref.strip()) >= 2:
+			err("SyntaxError: Can't assign to multiple dereferences yet.")
 		fun = functions.encode(dest.get_label(), '__setat__')
 		label = functions.get_arg_labels(fun)[1]
 		functions.call(fun, (dest, imm or Register(label, 'a')))
 		return
 
+	if Shared.debug: print(f'assigning to {dest} with {size_n = }')
+	# if not imm and dest.size_n != size_n:
+	# 	err('TypeError: assignment sizes do not match')
+	if dest.size_n == 0: err('TypeError: invalid destination size.')
+	if dest.size_n < size_n:
+		err(f'ValueError: assignment to label {dest.get_label()!r} overflowed')
 	output(f"mov {dest.get_clause()}, {imm or get_reg('a', dest.size_n)}")
 
 def dedent(indent_stack, branch_stack, ladder_stack, end = True):
@@ -430,6 +447,7 @@ class passes:
 
 
 			if kw is None:
+				# handle shorthand assignments += -= *= /= %= &= |= ^= <<= >>= //=
 				dest, _, exp = Shared.line.rpartition('=')
 				dest = dest.strip()
 				exp  = exp.strip()
@@ -463,7 +481,7 @@ class passes:
 				# for no op (and for assignment also maybe?) check `label is None`
 				if dest == '': continue
 				elif not exp: err('SyntaxError: Expected an expression.')
-				else: assign(dest) # TODO: optimize redundant `mov rax` assign(dest, var)
+				else: assign(dest, size_n) # TODO: optimize redundant `mov rax` assign(dest, var)
 				continue
 
 			# Keyword Statements
@@ -472,7 +490,7 @@ class passes:
 				if not kw[2]: err('SyntaxError: no condition given in while')
 				ladder_id = Literal('3', str(next_ladder_id))
 				snippets.insert('_while_precond', (ladder_id,))
-				size_n = parse(kw[2])
+				size_n, imm = parse(kw[2])
 				snippets.insert('_while_postcond',
 					(ladder_id, Register(str(size_n), 'a')))
 				ladder_stack.append(ladder_id)
@@ -484,7 +502,7 @@ class passes:
 				if not kw[2]: err('SyntaxError: no condition given in if')
 				ladder_id = Literal('3', str(next_ladder_id))
 				branch_id = Literal('3', '0')
-				size_n = parse(kw[2])
+				size_n, imm = parse(kw[2])
 				snippets.insert('_if',(
 					ladder_id, branch_id, Register(str(size_n), 'a')))
 				ladder_stack.append(ladder_id)
@@ -498,7 +516,7 @@ class passes:
 				if branch_id is WHILE_BRANCH:
 					err('SyntaxError: elif not allowed after while')
 				snippets.insert('_else', (ladder_id, branch_id))
-				size_n = parse(kw[2])
+				size_n, imm = parse(kw[2])
 				branch_id.name = str(int(branch_id.name)+1)
 				snippets.insert('_if', (
 					ladder_id, branch_id, Register(str(size_n), 'a')))
