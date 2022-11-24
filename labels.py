@@ -1,6 +1,4 @@
-import misc
-
-labels = {'void': 0}
+labels = {'void': 0, 'str': 6}
 
 def set_labels(new_labels):
 	global labels
