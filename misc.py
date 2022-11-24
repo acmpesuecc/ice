@@ -82,7 +82,7 @@ class Variable:
 		self.name = name
 		self.init = None
 		self.size = labels.get_size(label)
-		self.size_n = labels.get_size_n(label)
+		self.size_n = labels.get_size_n(self.size)
 		self.enc_name = self.encode()
 		self.labels = [label]
 

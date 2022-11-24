@@ -26,8 +26,7 @@ def get_size(label):
 	if num == 0: return 0
 	return (fac<<(max(0, int(num)-3)))
 
-def get_size_n(label):
-	size = get_size(label)
+def get_size_n(size):
 	if size not in {1, 2, 4, 8}: return 0
 	return size.bit_length()+2
 	# fac = 1

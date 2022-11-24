@@ -199,7 +199,7 @@ def parse(exp) -> 'size_n':
 		bin_op = True
 		uni_chain = []
 
-	return labels.get_size_n(b_label)
+	return labels.get_size_n(labels.get_size(b_label))
 
 def assign(dest, imm: Variable = None):
 	# TODO: get size of LHS (assuming 64-bit rn)
