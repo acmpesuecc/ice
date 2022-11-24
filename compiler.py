@@ -132,7 +132,7 @@ def parse(exp) -> 'size_n':
 				if bin_op or uni_chain: err('SyntaxError: '
 					'Operations not yet supported on sequence literals.')
 			if token['symbol'] not in unary:
-				err('SyntaxError: Invalid unary operator.')
+				err(f'SyntaxError: Invalid unary operator {token["symbol"]!r}.')
 			uni_chain.append(token['symbol'])
 			label = None
 			continue

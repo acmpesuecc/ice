@@ -73,7 +73,7 @@ mov %0a, %0C
 mul %1b
 ;
 
-; _udtruediv $s s s
+; _udfloordiv $s s s
 xor rdx, rdx
 mov %1b, %1C
 mov %0a, %0C

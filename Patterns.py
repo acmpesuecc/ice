@@ -13,8 +13,8 @@ dest  = _compile(rf'(@{_label}\s+|{_shape}[3-6])?(\**)([A-Za-z_]\w*)'
 token = _compile(rf'@(?P<label>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
 	r'(?:\s*(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
 	r'\[(?P<item>.*?)\]' ')?|'
-	r'(?P<symbol>\S)')
-keywords = _compile(r'\s*\b((?:el)?if|while|else)\b(.*?)(:\s*)?$')
+	r'(?P<symbol>[!<=>]=|<<|>>|//|\S)')  # __pow__? ^^? but it isn't default...
+keywords = _compile(r'\s*\b(if|elif|while|else)\b(.*?)(:\s*)?$')
 
 stmt  = _compile(r'(\s*)((?:\'(?:\\?.)*?\'|"(?:\\?.)*?"|[^#])*)')
 
