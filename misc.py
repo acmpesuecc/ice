@@ -61,8 +61,10 @@ def err(msg):
 	print(msg)
 	quit(1)
 
-def get_reg(reg: r'[abcd]|[ds]i|[sbi]p|r(8|9|1[1-5])', size_n):
-	if not size_n: err("TypeError: Can't fit in a register.")
+def get_reg(reg: r'[abcd]|[ds]i|[sbi]p|r(8|9|1[1-5])', size_n, var = None):
+	if not size_n:
+		if var is None: err("TypeError: Can't fit in a register.")
+		err(f"TypeError: Can't fit {var} in a register.")
 	if reg in 'abcd':
 		l, r = reg_list[size_n]
 		return l+reg+r

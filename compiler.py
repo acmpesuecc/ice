@@ -188,7 +188,7 @@ def parse(exp) -> 'size_n':
 		if bin_op: output('mov rcx, rax')
 		if enc_op is not None: functions.call(enc_op, args)
 		elif uni_chain: functions.call(uni_chain.pop(), (var,))
-		else: output(f'mov {get_reg("a", var.size_n)}, {var.get_clause()}')
+		else: output(f'mov {get_reg("a", var.size_n, var)}, {var.get_clause()}')
 		for enc_op in reversed(uni_chain):
 			functions.call(enc_op, (Register(label, 'a'),))
 			label = functions.get_label(enc_op)
