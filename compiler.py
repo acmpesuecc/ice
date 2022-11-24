@@ -18,7 +18,8 @@ sfile = open('builtins.ice-snippet')
 snippets.read_snippets(sfile, crlf)
 
 if len(argv) <2:
-	if Shared.debug: argv.append('Tests\\refactor tester.ice')
+	# if Shared.debug: argv.append('Tests\\refactor tester.ice')
+	if Shared.debug: argv.append('Examples\\Demo.ice')
 	else: print('Input file not specified'); quit(1)
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
@@ -82,7 +83,7 @@ def declare(label, name, init = None):
 			var.init = init
 		return
 
-	var = Variable(label, name)
+	var = Variable(label, name, setlabel = False)
 
 	variables[name] = var
 
@@ -101,7 +102,7 @@ def declare(label, name, init = None):
 
 def get_var(name, label = None):
 	if name.isdigit(): return Literal(label or '6', name)
-	if name not in variables: err(f'NameError: {name!r} not defined.')
+	if name not in variables: err(f'NameError: {name!r} not declared.')
 	return variables[name]
 
 def uni_fill(uni_chain, label):
@@ -118,7 +119,6 @@ def parse(exp) -> 'size_n':
 	bin_op  = None  # remembered for use after unary operations
 	size_n  = 0
 
-	if Shared.debug: output(f'\n;{Shared.line_no}:', Shared.line.strip())
 	for token in Patterns.token.finditer(exp):
 		if bin_op is True: # expecting a binary operator
 			if token[0] not in binary:
@@ -160,16 +160,26 @@ def parse(exp) -> 'size_n':
 			label = functions.get_label(enc_op)
 			arg_labels = functions.get_arg_labels(enc_op)[len(args):]
 			for arg, arg_label in zip(token['args'].split(','), arg_labels):
+				if Shared.debug: print(f'{arg.strip()!r} as @{arg_label}')
 				args.append(get_var(arg.strip(), arg_label))
+				if args[-1].get_label() is None:
+					err(f'NameError: {args[-1].name!r} is not yet declared.')
+			if Shared.debug: print(args)
 		elif token['item']:
 			var = get_var(token['subject'])
+			if var.get_label() is None:
+				err(f'NameError: {var.name!r} is not yet declared.')
 			enc_op = functions.encode(var.get_label(), '__getitem__')
 			label = functions.get_label(enc_op)
 			index_label = functions.get_arg_labels(enc_op)[1]
 			index = get_var(token['item'], index_label)
+			if index.get_label() is None:
+				err(f'NameError: {index.name!r} is not yet declared.')
 			args.extend([var, index])
 		else:
 			var = get_var(token['subject'], label)
+			if var.get_label() is None:
+				err(f'NameError: {var.name!r} is not yet declared.')
 			label = var.get_label()
 
 		uni_fill(uni_chain, label)
@@ -199,6 +209,8 @@ def parse(exp) -> 'size_n':
 		bin_op = True
 		uni_chain = []
 
+	if Shared.debug: print('BLABEL AFTER PARSING %r: %r' % (exp, b_label))
+	if b_label is None: return None
 	return labels.get_size_n(labels.get_size(b_label))
 
 def assign(dest, imm: Variable = None):
@@ -211,6 +223,8 @@ def assign(dest, imm: Variable = None):
 
 	if dest not in variables: err(f'NameError: {dest!r} not declared.')
 	dest = variables[dest]
+	if dest.get_label() is None:
+		err(f'NameError: {dest.name!r} not yet declared.')
 
 	if index:
 		if deref: err("SyntaxError: Can't assign to multiple operations yet.")
@@ -377,6 +391,7 @@ if __name__ == '__main__':
 
 		curr_indent, Shared.line = match[1], match[2]
 		if not Shared.line.rstrip(): continue
+		if Shared.debug: print('\n%d: %r' % (Shared.line_no, Shared.line))
 
 		kw = Patterns.keywords.match(Shared.line)
 
@@ -416,14 +431,26 @@ if __name__ == '__main__':
 			dest = dest.strip()
 			exp  = exp.strip()
 
-			if not dest and Patterns.decl.match(exp): continue
-			# if Shared.debug: print(f'{Shared.line_no}:', Shared.line.strip())
-			decl = Patterns.decl.match(dest)
-
-			if decl:
-				var = get_var(decl[3])
+			if Shared.debug: print(f'{Shared.line!r}',
+				f'-> exp: {Patterns.decl.match(exp)},'
+				f'dest: {Patterns.decl.match(dest)}')
+			
+			# no destination, only declaration
+			decl = Patterns.decl.match(exp)
+			if not dest and decl:
+				if Shared.debug: print('Exp declaration')
 				label = decl[2] or decl[1]
-				var.labels[-1] = label
+				# accepts multi non-@ decl
+				for var in exp.split()[1:]: get_var(var).set_label(label)
+				continue
+
+			# (re)declaration with assignment
+			decl = Patterns.decl.match(dest)
+			if decl:
+				if Shared.debug: print('Dest declaration')
+				label = decl[2] or decl[1]
+				var = get_var(decl[3])
+				var.set_label(label)
 
 			if not exp or exp[0] not in '["\'': parse(exp)
 			elif decl: dest = '' # sequence literals only initialise right now

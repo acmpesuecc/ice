@@ -1,4 +1,5 @@
 import labels
+import Patterns
 from sys import argv
 
 # String States
@@ -51,7 +52,9 @@ binary = {
 }
 
 def err(msg):
-	print(f'File "{argv[1]}", line {Shared.line_no}')
+	import compiler
+	try: print(f'File "{compiler.infile.name}", line {Shared.line_no}')
+	except AttributeError: print(f'Debug input, line {Shared.line_no}')
 	print('   ', Shared.line.strip())
 	if Shared.debug: raise RuntimeError(repr(msg))
 
@@ -78,13 +81,13 @@ class Shared:
 	debug = False
 
 class Variable:
-	def __init__(self, label, name):
+	def __init__(self, label, name, setlabel = True):
 		self.name = name
 		self.init = None
 		self.size = labels.get_size(label)
 		self.size_n = labels.get_size_n(self.size)
 		self.enc_name = self.encode()
-		self.labels = [label]
+		self.labels = [label if setlabel else None]
 
 	def __repr__(self):
 		return f'{type(self).__name__}(@{self.get_label()} {self.name}, '\
@@ -95,7 +98,22 @@ class Variable:
 		return '$'+self.name
 
 	def get_label(self):
+		# TODO: add logic for scope level
 		return self.labels[-1]
+
+	def set_label(self, label):  # might make this a @property
+		if Patterns.empty.fullmatch(label):
+			# assume non-inits have been ruled out
+			arr_len = len(self.init) // labels.element_size(label)
+			label = '%s%d%s' % (label[0], arr_len, label[1:])
+
+		if labels.get_size(label) != self.size:
+			# TODO: plural
+			err(f'TypeError: Cannot set label {label!r} for {self.name!r} '
+				f'(Requires {self.size} bytes, got {labels.get_size(label)})')
+		if Shared.debug: print(f'Set the label of {self.name!r} to {label}')
+		self.labels[-1] = label
+		return label  # returns because it changes if empty label
 
 	def get_clause(self, unit = False):
 		return f'{size_list[self.size_n]} [{self.enc_name}]'
