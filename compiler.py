@@ -367,10 +367,10 @@ class passes:
 			label = match[2] or match[1]
 			declare(label, name, init = init)
 
+	def data():
 		# Writing to the data segment
 
 		if Shared.debug: print('VARIABLES:', *variables.values())
-
 		output()
 		snippets.insert('_data')
 		if Shared.debug: print('\nINITS:'); inits = False
@@ -551,6 +551,9 @@ if __name__ == '__main__':
 
 	snippets.insert('_header')
 	passes.declaration()
+	passes.data()
+	output('\nsegment .text')
+	output('main:')
 	passes.codegen()
 	snippets.insert('_exit')
 
