@@ -24,12 +24,6 @@ if len(argv) <2:
 name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(name+'.asm')
 
-infile = open(argv[1])
-out = open(argv[2], 'w')
-def output(*args, file = out, **kwargs): print(*args, **kwargs, file = file)
-functions.set_output(output)
-snippets.set_output(output)
-
 variables = {}
 
 if Shared.debug:
@@ -462,7 +456,8 @@ class passes:
 					if Shared.debug: print('Exp declaration')
 					label = decl[2] or decl[1]
 					# accepts multi non-@ decl
-					for var in exp.split()[1:]: get_var(var).set_label(label)
+					get_var(decl[3]).set_label(label)
+					for var in exp.split()[2:]: get_var(var).set_label(label)
 					continue
 
 				# (re)declaration with assignment
@@ -550,6 +545,10 @@ class passes:
 			dedent(indent_stack, branch_stack, ladder_stack)
 
 if __name__ == '__main__':
+	infile = open(argv[1])
+	out = open(argv[2], 'w')
+	Debug.set_output_file(out)
+
 	snippets.insert('_header')
 	passes.declaration()
 	passes.codegen()
