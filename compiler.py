@@ -26,6 +26,14 @@ if len(argv)<3: argv.append(name+'.asm')
 
 variables = {}
 
+def set_output_file(new_outfile):
+	global output, out
+	out = new_outfile
+	def output(*args, file = new_outfile, **kwargs):
+		print(*args, **kwargs, file = file)
+	snippets.set_output(output)
+	functions.set_output(output)
+
 if Shared.debug:
 	Shared.line_no = 0
 	Shared.line = '[DEBUG] *Empty line*'
@@ -48,14 +56,6 @@ if Shared.debug:
 			sfile = new_sfile
 			if new_crlf is None: new_crlf = crlf
 			snippets.read_snippets(sfile, new_crlf)
-		@staticmethod
-		def set_output_file(new_outfile):
-			global output, out
-			out = new_outfile
-			def output(*args, file = new_outfile, **kwargs):
-				print(*args, **kwargs, file = file)
-			snippets.set_output(output)
-			functions.set_output(output)
 
 def declare(label, name, init = None):
 	if Patterns.empty.fullmatch(label):
@@ -547,7 +547,7 @@ class passes:
 if __name__ == '__main__':
 	infile = open(argv[1])
 	out = open(argv[2], 'w')
-	Debug.set_output_file(out)
+	set_output_file(out)
 
 	snippets.insert('_header')
 	passes.declaration()
