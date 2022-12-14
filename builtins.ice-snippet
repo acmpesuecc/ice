@@ -23,6 +23,7 @@
 ; _header void
 extern printf
 extern sprintf
+extern strcpy
 extern malloc
 extern exit
 global main
@@ -31,6 +32,7 @@ global main
 ; _data void
 segment .data
 _p: db `%u\n`, 0
+_q: db `%llu\n`, 0
 _c: db 0, 0
 _ln: db 0, 10, 0
 _fmt_udstr: db `%llu`, 0
@@ -106,6 +108,21 @@ setl al
 ; _udand $s s s
 mov %0b, %0C
 and %1b, %1C
+mov rax, rbx
+;
+
+; _udlshift 6 s s
+xor rbx, rbx
+mov %0b, %0C
+mov %1c, %1C
+shl rbx, cl
+mov rax, rbx
+;
+
+; _udrshift $s s s
+mov %0b, %0C
+mov %1c, %1C
+shr %0b, cl
 mov rax, rbx
 ;
 
@@ -194,6 +211,15 @@ call printf
 pop rbp
 ;
 
+; prbxln void
+mov rdx, rbx
+xor rax, rax
+mov rcx, _q
+push rbp
+call printf
+pop rbp
+;
+
 ; print void s
 %0.__str__()
 mov rdx, rax
@@ -209,6 +235,21 @@ mov rdx, rax
 mov rcx, _p_strln
 push rbp
 call printf
+pop rbp
+;
+
+; malloc *3 6
+mov rcx, %0C
+push rbp
+call malloc
+pop rbp
+;
+
+; strcpy void *3 *3
+mov rcx, %0C
+mov rdx, %1C
+push rbp
+call strcpy
 pop rbp
 ;
 
