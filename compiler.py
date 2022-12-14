@@ -119,9 +119,11 @@ def parse(exp) -> ('size_n', 'imm'):
 	label   = None
 	b_label = None
 	bin_op  = None  # remembered for use after unary operations
-	size_n  = 0
 
 	for token in Patterns.token.finditer(exp):
+		if Shared.debug:
+			print(f'{label = }, {b_label = }, {bin_op = }')
+			print(repr(token[0]))
 		if bin_op is True: # expecting a binary operator
 			if token[0] not in binary:
 				err('SyntaxError: Expected binary operator.')
@@ -139,6 +141,7 @@ def parse(exp) -> ('size_n', 'imm'):
 			continue
 
 		if token['label']:
+			if Shared.debug: print('Cast to label @%s' % token['label'])
 			label = token['label']; uni_fill(uni_chain, label); continue
 
 
@@ -180,6 +183,7 @@ def parse(exp) -> ('size_n', 'imm'):
 				err(f'NameError: {index.name!r} is not yet declared.')
 			args.extend([var, index])
 		else:
+			if Shared.debug: print('UNIT TERM')
 			var = get_var(token['subject'], label)
 			if var.get_label() is None:
 				err(f'NameError: {var.name!r} is not yet declared.')
@@ -208,6 +212,9 @@ def parse(exp) -> ('size_n', 'imm'):
 			functions.call(bin_op,
 				(Register(b_label, 'c'), Register(label, 'a')))
 			b_label = functions.get_label(bin_op)
+			imm = None
+
+		# first term
 		elif uni_chain: b_label = functions.get_label(uni_chain[0])
 		else: b_label = label
 
@@ -215,12 +222,14 @@ def parse(exp) -> ('size_n', 'imm'):
 		bin_op = True
 		uni_chain = []
 
-	if Shared.debug: print('BLABEL AFTER PARSING %r: %r' % (exp, b_label))
+	if Shared.debug:
+		print(f'{label = }, {b_label = }, {bin_op = }')
+		print('BLABEL AFTER PARSING %r: %r' % (exp, b_label))
 	if b_label is None: return None
 	return labels.get_size_n(labels.get_size(b_label)), imm
 
 def assign(dest, size_n, imm: Literal = None):
-	# TODO: get size of LHS (assuming 64-bit rn)
+	# TODO: get LHS (assuming rax rn)
 	match = Patterns.dest.match(dest)
 	deref, dest, index = match[2], match[3], match[4]
 	# print(dest, (var, index), sep = ' -> ')
@@ -242,7 +251,10 @@ def assign(dest, size_n, imm: Literal = None):
 		elif index not in variables: err(f'NameError: {index!r} not declared.')
 		else: index = variables[index]
 
-		functions.call(fun, (dest, index, imm or Register(arg_labels[2], 'a')))
+		if imm is None: val = Register(arg_labels[2], 'a')
+		else: val = imm.encode()
+
+		functions.call(fun, (dest, index, val))
 		return
 
 	# Use __setat__ when * in dest
@@ -251,7 +263,10 @@ def assign(dest, size_n, imm: Literal = None):
 			err("SyntaxError: Can't assign to multiple dereferences yet.")
 		fun = functions.encode(dest.get_label(), '__setat__')
 		label = functions.get_arg_labels(fun)[1]
-		functions.call(fun, (dest, imm or Register(label, 'a')))
+
+		if imm is None: val = Register(label, 'a')
+		else: val = imm.encode()
+		functions.call(fun, (dest, val))
 		return
 
 	if Shared.debug: print(f'assigning to {dest} with {size_n = }')
@@ -367,6 +382,7 @@ class passes:
 			label = match[2] or match[1]
 			declare(label, name, init = init)
 
+	@staticmethod
 	def data():
 		# Writing to the data segment
 
@@ -385,6 +401,7 @@ class passes:
 		if Shared.debug and not inits: print(None)
 		if Shared.debug: print()
 
+	@staticmethod
 	def codegen():
 		# Writing to the text segment
 
@@ -397,15 +414,15 @@ class passes:
 		expect_indent = False
 
 		infile.seek(0)
-		output('\nsegment .text')
-		output('main:')
 		for Shared.line_no, Shared.line in enumerate(infile, 1):
 			match = Patterns.stmt.match(Shared.line)
 			if not match: err('SyntaxError: EOL in string')  # only possibility?
 
 			curr_indent, Shared.line = match[1], match[2]
 			if not Shared.line.rstrip(): continue
-			if Shared.debug: print('\n%d: %r' % (Shared.line_no, Shared.line))
+			if Shared.debug:
+				print('\n%d: %r' % (Shared.line_no, Shared.line))
+				output('\n; %d: %r' % (Shared.line_no, Shared.line))
 
 			kw = Patterns.keywords.match(Shared.line)
 
@@ -468,7 +485,7 @@ class passes:
 					var = get_var(decl[3])
 					var.set_label(label)
 
-				if not exp or exp[0] not in '["\'': parse(exp)
+				if not exp or exp[0] not in '["\'': size_n, imm = parse(exp)
 				elif decl: dest = '' # sequence literals only initialise right now
 				else: err('SyntaxError: Sequence literals '
 					'not yet supported outside declaration.')
@@ -476,7 +493,7 @@ class passes:
 				# for no op (and for assignment also maybe?) check `label is None`
 				if dest == '': continue
 				elif not exp: err('SyntaxError: Expected an expression.')
-				else: assign(dest, size_n) # TODO: optimize redundant `mov rax` assign(dest, var)
+				else: assign(dest, size_n, imm) # TODO: optimize redundant `mov rax` assign(dest, var)
 				continue
 
 			# Keyword Statements
@@ -531,7 +548,7 @@ class passes:
 					print(f'else:  {ladder_stack = }, {branch_stack = }')
 			else:
 				# return, break, continue etc. those that don't end with ':'
-				...
+				err(f'SyntaxError: {kw[1]} is not yet supported.')
 				output()
 				continue
 			if not kw[3]: err(f'SyntaxError: Colon required at the end of {kw[1]}')
