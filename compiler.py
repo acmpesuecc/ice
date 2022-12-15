@@ -96,12 +96,12 @@ def declare(label, name, init = None):
 		var.init = init
 
 def get_var(name, cast = None):
-	if Shared.debug: print(f'get_var(): name {name!r}, label {cast!r}')
 	if name.isdigit():
 		size_n = (int(name).bit_length()-1).bit_length()
 		if size_n > 6: err(f'ValueError: Literal too big to fit in 64 bits.')
 		# if cast and labels.get_size_n(labels.get_size(cast)) < size_n:
 		# 	err(f'TypeError: Overflow for cast of {name} to label {cast!r}')
+		if Shared.debug: print(f'  GOT VAR: {Literal(cast or "6", name)}')
 		return Literal(cast or '6', name)
 	if not name.isidentifier():
 		err(f'SyntaxError: {name!r} is not a valid identifier.')
@@ -110,6 +110,7 @@ def get_var(name, cast = None):
 	if cast and labels.get_size(cast) > var.size:
 		err(f'TypeError: label {cast!r} is bigger than {name!r}. '
 			'Cannot cast.')
+	if Shared.debug: print(f'  GOT VAR: {var}')
 	return var
 
 def uni_fill(uni_chain, label):
@@ -124,12 +125,14 @@ def parse(exp) -> ('size_n', 'imm'):
 	label   = None
 	b_label = None
 	bin_op  = None  # remembered for use after unary operations
+	imm = None
 
+	print('PARSE BEGIN')
 	for token in Patterns.token.finditer(exp):
 		if Shared.debug:
-			print(f'{label = }, {b_label = }, {bin_op = }')
-			print(repr(token[0]))
-		if bin_op is True: # expecting a binary operator
+			print(f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
+			print(f'TOKEN: {token[0]!r}')
+		if bin_op is EXPECTED: # expecting a binary operator
 			if token[0] not in binary:
 				err('SyntaxError: Expected binary operator.')
 			bin_op = functions.encode(b_label, binary[token[0]])
@@ -148,9 +151,7 @@ def parse(exp) -> ('size_n', 'imm'):
 		if token['label']:
 			label = token['label']
 			uni_fill(uni_chain, label)
-			if Shared.debug:
-				print('Cast to label @%s' % token['label'])
-				print(f'{uni_chain = }')
+			if Shared.debug: print(f'  CAST: {uni_chain = }')
 			continue
 
 
@@ -173,13 +174,14 @@ def parse(exp) -> ('size_n', 'imm'):
 				args.append(var)
 				enc_op = functions.encode(var.get_label(), token['method'])
 			label = functions.get_label(enc_op)
-			arg_labels = functions.get_arg_labels(enc_op)[len(args):]
+			arg_labels = functions.get_arg_labels(enc_op)[len(args):] # subject
 			for arg, arg_label in zip(token['args'].split(','), arg_labels):
-				if Shared.debug: print(f'{arg.strip()!r} as @{arg_label}')
+				if Shared.debug:
+					print(f'  ARG: {arg.strip()!r} as @{arg_label}')
 				args.append(get_var(arg.strip(), arg_label))
 				if args[-1].get_label() is None:
 					err(f'NameError: {args[-1].name!r} is not yet declared.')
-			if Shared.debug: print(args)
+			if Shared.debug: print('  ARGS:', args)
 		elif token['item']:
 			var = get_var(token['subject'])
 			if var.get_label() is None:
@@ -192,7 +194,6 @@ def parse(exp) -> ('size_n', 'imm'):
 				err(f'NameError: {index.name!r} is not yet declared.')
 			args.extend([var, index])
 		else:
-			if Shared.debug: print('UNIT TERM')
 			var = get_var(token['subject'], label)
 			if var.get_label() is None:
 				err(f'NameError: {var.name!r} is not yet declared.')
@@ -228,12 +229,12 @@ def parse(exp) -> ('size_n', 'imm'):
 		else: b_label = label
 
 		label = None
-		bin_op = True
+		bin_op = EXPECTED
 		uni_chain = []
 
 	if Shared.debug:
-		print(f'{label = }, {b_label = }, {bin_op = }')
-		print('BLABEL AFTER PARSING %r: %r' % (exp, b_label))
+		print(f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
+		print('PARSE END %r' % exp)
 	if b_label is None: return None
 	return labels.get_size_n(labels.get_size(b_label)), imm
 
@@ -254,7 +255,7 @@ def assign(dest, size_n, imm: Literal = None):
 		if deref: err("SyntaxError: Can't assign to multiple operations yet.")
 		fun = functions.encode(dest.get_label(), '__setitem__')
 		arg_labels = functions.get_arg_labels(fun)
-		if Shared.debug: print(f'{fun = }, {arg_labels = }, {index = }')
+		# if Shared.debug: print(f'{fun = }, {arg_labels = }, {index = }')
 		
 		if index.isdigit(): index = Literal(arg_labels[1], index)
 		elif index not in variables: err(f'NameError: {index!r} not declared.')
@@ -278,7 +279,7 @@ def assign(dest, size_n, imm: Literal = None):
 		functions.call(fun, (dest, val))
 		return
 
-	if Shared.debug: print(f'assigning to {dest} with {size_n = }')
+	if Shared.debug: print(f'ASSIGN: {dest = }, {size_n = }')
 	# if not imm and dest.size_n != size_n:
 	# 	err('TypeError: assignment sizes do not match')
 	if dest.size_n == 0: err('TypeError: invalid destination size.')
@@ -319,7 +320,7 @@ def dedent(indent_stack, branch_stack, ladder_stack, end = True):
 		snippets.insert('_while_end', (ladder_stack.pop(),))
 	else:
 		snippets.insert('_if_end', (ladder_stack.pop(), branch_id))
-	if Shared.debug: print(f'DEDENT: {ladder_stack = }, {branch_stack = }')
+	# if Shared.debug: print(f'DEDENT: {ladder_stack = }, {branch_stack = }')
 
 class passes:
 	@staticmethod
@@ -453,7 +454,7 @@ class passes:
 			curr_indent, Shared.line = match[1], match[2]
 			if not Shared.line.rstrip(): continue
 			if Shared.debug:
-				print('\n%d: %r' % (Shared.line_no, Shared.line))
+				print('\nLINE %d: %r' % (Shared.line_no, Shared.line))
 				output('\n; %d: %r' % (Shared.line_no, Shared.line))
 
 			kw = Patterns.keywords.match(Shared.line)
@@ -470,22 +471,22 @@ class passes:
 				else: err('IndentationError: '
 					'Current indentation does not match any outer indentation')
 
-				if Shared.debug: print('Multiple dedents:',
-					f'{len(branch_stack) = }',
-					f'{len(ladder_stack) = }',
-					f'{dedents = }',
-				)
+				# if Shared.debug: print('DEDENT - MULTIPLE:',
+				# 	f'{len(branch_stack) = }',
+				# 	f'{len(ladder_stack) = }',
+				# 	f'{dedents = }',
+				# )
 				for i in range(dedents-1):
 					dedent(indent_stack, branch_stack, ladder_stack)
-				if Shared.debug: print('One more dedent',
-					f'{len(branch_stack) = }',
-					f'{len(ladder_stack) = }',
-				)
+				# if Shared.debug: print('DEDENT - LAST:',
+				# 	f'{len(branch_stack) = }',
+				# 	f'{len(ladder_stack) = }',
+				# )
 				dedent(indent_stack, branch_stack, ladder_stack,
 					end = not (kw and kw[1] in elses))
 
-			if Shared.debug: print(f'INDENT UPDATE: {indent_stack = } '
-				f' from {prev_indent!r} to {curr_indent!r}')
+			# if Shared.debug: print(f'INDENT: {indent_stack = } '
+			# 	f' from {prev_indent!r} to {curr_indent!r}')
 			prev_indent = curr_indent
 
 
@@ -495,14 +496,12 @@ class passes:
 				dest = dest.strip()
 				exp  = exp.strip()
 
-				if Shared.debug: print(f'{Shared.line!r}',
-					f'-> exp: {Patterns.decl.match(exp)},'
-					f'dest: {Patterns.decl.match(dest)}')
 				
 				# no destination, only declaration
 				decl = Patterns.decl.match(exp)
 				if not dest and decl:
-					if Shared.debug: print('Exp declaration')
+					if Shared.debug: print(f'DECL ONLY: {decl} '
+						f'(dest: {Patterns.decl.match(dest)})')
 					label = decl[2] or decl[1]
 					# accepts multi non-@ decl
 					get_var(decl[3]).set_label(label)
@@ -512,7 +511,8 @@ class passes:
 				# (re)declaration with assignment
 				decl = Patterns.decl.match(dest)
 				if decl:
-					if Shared.debug: print('Dest declaration')
+					if Shared.debug: print(f'DECL DEST: {decl} '
+						f'(exp: {Patterns.decl.match(exp)})')
 					label = decl[2] or decl[1]
 					var = get_var(decl[3])
 					var.set_label(label)

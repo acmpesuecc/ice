@@ -4,6 +4,9 @@ from sys import argv
 
 # String States
 CHAR, ESCAPE, HEX_ESCAPE, *_ = range(8)
+
+# Sentinels
+EXPECTED = type('EXPECTED', (), {'__repr__': lambda s: '<EXPECTED>'})()
 WHILE_BRANCH = type('WHILE_BRANCH', (), {'__repr__': lambda s: '<WHILE_BRANCH>'})()
 
 import os
@@ -113,7 +116,6 @@ class Variable:
 			# TODO: plural
 			err(f'TypeError: Cannot set label {label!r} for {self.name!r} '
 				f'(Requires {self.size} bytes, got {labels.get_size(label)})')
-		if Shared.debug: print(f'Set the label of {self.name!r} to {label}')
 		self.labels[-1] = label
 		return label  # returns because it changes if empty label
 

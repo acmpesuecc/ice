@@ -60,6 +60,7 @@ def call(enc_op, args : tuple[Variable] = ()):
 
 	if enc_op in snippets.snippets:
 		snippets.insert(enc_op, args, p, e)
+		if Shared.debug: print(f'  CALLED: {enc_op} (snippet) with {args}')
 		return
 
 	if enc_op not in functions:
@@ -89,3 +90,4 @@ def call(enc_op, args : tuple[Variable] = ()):
 	output('pop rbp')
 	if offset > 0: output('add rsp,', offset*8)
 
+	if Shared.debug: print(f'  CALLED: {enc_op} (function) with {args}')
