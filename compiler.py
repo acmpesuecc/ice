@@ -106,7 +106,11 @@ def get_var(name, cast = None):
 	if not name.isidentifier():
 		err(f'SyntaxError: {name!r} is not a valid identifier.')
 	if name not in variables: err(f'NameError: {name!r} not declared.')
-	return variables[name]
+	var = variables[name]
+	if cast and labels.get_size(cast) > var.size:
+		err(f'TypeError: label {cast!r} is bigger than {name!r}. '
+			'Cannot cast.')
+	return var
 
 def uni_fill(uni_chain, label):
 	for i, uni in enumerate(reversed(uni_chain), 1):
@@ -278,9 +282,34 @@ def assign(dest, size_n, imm: Literal = None):
 	# if not imm and dest.size_n != size_n:
 	# 	err('TypeError: assignment sizes do not match')
 	if dest.size_n == 0: err('TypeError: invalid destination size.')
-	if dest.size_n < size_n:
-		err(f'ValueError: assignment to label {dest.get_label()!r} overflowed')
-	output(f"mov {dest.get_clause()}, {imm or get_reg('a', dest.size_n)}")
+
+	if imm is not None:
+		# assert isinstance(imm, Literal)
+
+		size_n = (int(imm.name).bit_length()-1).bit_length()
+		if dest.size_n < size_n:
+			err(f'ValueError: {imm.name} does not fit in '
+				f'label {dest.get_label()!r}')
+
+		output(f'mov {dest.get_clause()}, {imm.name}'); return
+
+	elif dest.size_n < size_n:
+		size_n = dest.size_n  # only look at the low bits (for little endian)
+
+	src_a  = get_reg('a', size_n)
+	src_b  = get_reg('b', size_n)
+	dest_a = get_reg('a', dest.size_n)
+	dest_b = get_reg('b', dest.size_n)
+
+	if dest.size_n == size_n:
+		output(f'mov {dest.get_clause()}, {dest_a}')
+	elif size_n < 5: # @Optimization
+		output(f'movzx {dest_a}, {src_a}')
+		output(f'mov {dest.get_clause()}, {dest_a}')
+	else:
+		output(f'xor {dest_b}, {dest_b}')
+		output(f'mov {src_b}, {src_a}')
+		output(f'mov {dest.get_clause()}, {dest_b}')
 
 def dedent(indent_stack, branch_stack, ladder_stack, end = True):
 	indent_stack.pop()
@@ -297,7 +326,6 @@ class passes:
 	def declaration():
 		# Writing to bss segment
 
-		infile.seek(0)
 		output('\nsegment .bss')
 		for Shared.line_no, Shared.line in enumerate(infile, 1):
 			stmt = Patterns.stmt.match(Shared.line)[0].strip()
@@ -418,7 +446,6 @@ class passes:
 		prev_indent  = ''
 		expect_indent = False
 
-		infile.seek(0)
 		for Shared.line_no, Shared.line in enumerate(infile, 1):
 			match = Patterns.stmt.match(Shared.line)
 			if not match: err('SyntaxError: EOL in string')  # only possibility?
@@ -572,10 +599,13 @@ if __name__ == '__main__':
 	set_output_file(out)
 
 	snippets.insert('_header')
+	infile.seek(0)
 	passes.declaration()
 	passes.data()
 	output('\nsegment .text')
 	output('main:')
+
+	infile.seek(0)
 	passes.codegen()
 	snippets.insert('_exit')
 
