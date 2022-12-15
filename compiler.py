@@ -115,7 +115,7 @@ def get_var(name, cast = None):
 
 def uni_fill(uni_chain, label):
 	for i, uni in enumerate(reversed(uni_chain), 1):
-		if uni.isidentifier(): break
+		if uni not in unary: break
 		uni_chain[-i] = functions.encode(label, unary[uni])
 		label = functions.get_label(uni_chain[-i])
 
@@ -145,6 +145,7 @@ def parse(exp) -> ('size_n', 'imm'):
 			if token['symbol'] not in unary:
 				err(f'SyntaxError: Invalid unary operator {token["symbol"]!r}.')
 			uni_chain.append(token['symbol'])
+			if Shared.debug: print('  UNI CHAIN:', uni_chain)
 			label = None
 			continue
 
@@ -156,8 +157,12 @@ def parse(exp) -> ('size_n', 'imm'):
 
 
 		if uni_chain:
-			assert label or not uni_chain[-1].isidentifier()
-			assert not label or uni_chain[-1].isidentifier()
+			if Shared.debug:
+				print('  UNI CHAIN:', uni_chain)
+				print(
+					f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
+
+			assert bool(label) != (uni_chain[-1] in unary)
 
 		# Decode token
 		if token['subject'] in keywords:
