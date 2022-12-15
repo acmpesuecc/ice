@@ -127,7 +127,7 @@ def parse(exp) -> ('size_n', 'imm'):
 	bin_op  = None  # remembered for use after unary operations
 	imm = None
 
-	print('PARSE BEGIN')
+	if Shared.debug: print('PARSE BEGIN')
 	for token in Patterns.token.finditer(exp):
 		if Shared.debug:
 			print(f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
@@ -150,6 +150,7 @@ def parse(exp) -> ('size_n', 'imm'):
 			continue
 
 		if token['label']:
+			if label is not None: continue
 			label = token['label']
 			uni_fill(uni_chain, label)
 			if Shared.debug: print(f'  CAST: {uni_chain = }')
@@ -186,7 +187,7 @@ def parse(exp) -> ('size_n', 'imm'):
 				args.append(get_var(arg.strip(), arg_label))
 				if args[-1].get_label() is None:
 					err(f'NameError: {args[-1].name!r} is not yet declared.')
-			if Shared.debug: print('  ARGS:', args)
+			# if Shared.debug: print('  ARGS:', args)
 		elif token['item']:
 			var = get_var(token['subject'])
 			if var.get_label() is None:
@@ -210,7 +211,11 @@ def parse(exp) -> ('size_n', 'imm'):
 		# Call suffixes and uni_chain.
 		if bin_op: output('mov rcx, rax')
 		if enc_op is not None: functions.call(enc_op, args)
-		elif uni_chain: functions.call(uni_chain.pop(), (var,))
+		elif uni_chain:
+			enc_op = uni_chain.pop()
+			functions.call(enc_op, (var,))
+			label = functions.get_label(enc_op)
+			imm = None
 		else: output(f'mov {get_reg("a", var.size_n, var)}, {var.get_clause()}')
 		for enc_op in reversed(uni_chain):
 			functions.call(enc_op, (Register(label, 'a'),))

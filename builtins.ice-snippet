@@ -47,7 +47,7 @@ push rbp
 call exit
 ;
 
-; _udneg 6 s
+; _udneg $s s
 mov %0a, %0C
 neg %0a
 ;
