@@ -47,7 +47,7 @@ push rbp
 call exit
 ;
 
-; _udneg $s s
+; _udneg 6 s
 mov %0a, %0C
 neg %0a
 ;
@@ -57,7 +57,7 @@ mov %0a, %0C
 not %0a
 ;
 
-; _udadd $s s s
+; _udadd 6 s s
 mov %0b, %0C
 add %1b, %1C
 mov rax, rbx
@@ -66,10 +66,10 @@ mov rax, rbx
 ; _udsub $s s s
 mov %0b, %0C
 sub %1b, %1C
-mov rax, rbx
+mov %0a, %0b
 ;
 
-; _udmul $s s s
+; _udmul 6 s s
 mov %1b, %1C
 mov %0a, %0C
 mul %1b
@@ -87,7 +87,6 @@ xor rdx, rdx
 mov %1b, %1C
 mov %0a, %0C
 div %1b
-mov %0a, %0d
 mov %0a, %0d
 ;
 
@@ -126,7 +125,7 @@ shr %0b, cl
 mov rax, rbx
 ;
 
-; _udstr *3 s
+; _udstr str s
 mov rcx, _str
 mov rdx, _fmt_udstr
 xor r8, r8
@@ -137,11 +136,11 @@ pop rbp
 mov rax, _str
 ;
 
-; _pdstr *3 6
+; _pdstr str 6
 mov rax, %0C
 ;
 
-; _adstr *3 6
+; _adstr str 6
 mov rax, %0E
 ;
 
@@ -197,7 +196,7 @@ mov %2a,  %2C
 mov %2S [rbx * %0U + %0E], %2a
 ;
 
-; str *3 s
+; str str s
 %0.__str__()
 ;
 

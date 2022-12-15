@@ -95,13 +95,14 @@ def declare(label, name, init = None):
 				f'Got {len(init)} instead.')
 		var.init = init
 
-def get_var(name, label = None):
+def get_var(name, cast = None):
+	if Shared.debug: print(f'get_var(): name {name!r}, label {cast!r}')
 	if name.isdigit():
 		size_n = (int(name).bit_length()-1).bit_length()
 		if size_n > 6: err(f'ValueError: Literal too big to fit in 64 bits.')
-		if label and labels.get_size_n(label) < size_n:
-			err(f'TypeError: Overflow for cast of {name} to label {label!r}')
-		return Literal(label or str(max(3, size_n)), name)
+		# if cast and labels.get_size_n(labels.get_size(cast)) < size_n:
+		# 	err(f'TypeError: Overflow for cast of {name} to label {cast!r}')
+		return Literal(cast or '6', name)
 	if not name.isidentifier():
 		err(f'SyntaxError: {name!r} is not a valid identifier.')
 	if name not in variables: err(f'NameError: {name!r} not declared.')
@@ -141,8 +142,12 @@ def parse(exp) -> ('size_n', 'imm'):
 			continue
 
 		if token['label']:
-			if Shared.debug: print('Cast to label @%s' % token['label'])
-			label = token['label']; uni_fill(uni_chain, label); continue
+			label = token['label']
+			uni_fill(uni_chain, label)
+			if Shared.debug:
+				print('Cast to label @%s' % token['label'])
+				print(f'{uni_chain = }')
+			continue
 
 
 		if uni_chain:
@@ -187,8 +192,8 @@ def parse(exp) -> ('size_n', 'imm'):
 			var = get_var(token['subject'], label)
 			if var.get_label() is None:
 				err(f'NameError: {var.name!r} is not yet declared.')
-			if isinstance(var, Literal): imm = var
-			label = var.get_label()
+			if isinstance(var, Literal) and not label: imm = var
+			label = label or var.get_label()
 
 		uni_fill(uni_chain, label)
 
