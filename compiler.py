@@ -365,7 +365,6 @@ class passes:
 	def declaration():
 		# Writing to bss segment
 
-		output('\nsegment .bss')
 		for Shared.line_no, Shared.line in enumerate(infile, 1):
 			stmt = Patterns.stmt.match(Shared.line)[0].strip()
 			if Patterns.keywords.match(stmt): continue
@@ -385,10 +384,12 @@ class passes:
 						declare(label, decl)
 				else:
 					for decl in decls:
-						decl = decl.strip()
 						match = Patterns.decl.match(decl)
 						if not match:
 							err(f'SyntaxError: Expected a declaration token.')
+						if match[2]: err('SyntaxError: '
+							f'{decl!r} @ declarations not allowed '
+							'for inline multi-declaration.')
 						label, name = match[1].strip(), match[3]
 						declare(label, name)
 				continue
@@ -540,10 +541,19 @@ class passes:
 				if not dest and decl:
 					if Shared.debug: print(f'DECL ONLY: {decl} '
 						f'(dest: {Patterns.decl.match(dest)})')
-					label = decl[2] or decl[1]
-					# accepts multi non-@ decl
-					get_var(decl[3]).set_label(label)
-					for var in exp.split()[2:]: get_var(var).set_label(label)
+
+					if decl[2]:
+						label = decl[2]
+						# accepts multi non-@ decl
+						get_var(decl[3]).set_label(label)
+						for var in exp.split()[2:]: get_var(var).set_label(label)
+						continue
+
+					label = decl[1]
+					for decl in exp.split():
+						match = Patterns.decl.match(decl)
+						label, var = match[1], match[3]
+						get_var(var).set_label(label)
 					continue
 
 				# (re)declaration with assignment
@@ -638,6 +648,7 @@ if __name__ == '__main__':
 
 	snippets.insert('_header')
 	infile.seek(0)
+	output('\nsegment .bss')
 	passes.declaration()
 	passes.data()
 	output('\nsegment .text')

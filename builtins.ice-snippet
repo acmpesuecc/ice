@@ -25,6 +25,7 @@ extern printf
 extern sprintf
 extern strcpy
 extern malloc
+extern free
 extern exit
 global main
 ;
@@ -242,6 +243,13 @@ pop rbp
 mov rcx, %0C
 push rbp
 call malloc
+pop rbp
+;
+
+; free void *3
+mov rcx, %0C
+push rbp
+call free
 pop rbp
 ;
 
