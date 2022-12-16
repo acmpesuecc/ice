@@ -42,6 +42,7 @@ _p_strln: db `%s\n`, 0
 ;
 
 ; _exit void
+
 xor rcx, rcx
 push rbp
 call exit

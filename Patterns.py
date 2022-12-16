@@ -11,7 +11,7 @@ _label = rf'{_shape}{_unit}'
 decl  = _compile(rf'(@({_label})\s+|{_shape}[3-6])([A-Za-z_]\w*)')
 dest  = _compile(rf'(?:(@{_label}\s+|{_shape}[3-6])|((?:\*\s*)*))?([A-Za-z_]\w*)'
 		r'(?:\[([A-Za-z_]\w*|\d+)\])?')
-token = _compile(rf'@(?P<label>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
+token = _compile(rf'@(?P<cast>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
 	r'(?:\s*(?:\.\s*(?P<method>[a-zA-Z_]\w*)\s*)?\((?P<args>.*?)\)|'
 	r'\[(?P<item>.*?)\]' ')?|'
 	r'(?P<symbol>[!<=>]=|<<|>>|//|\S)')  # __pow__? ^^? but it isn't default...

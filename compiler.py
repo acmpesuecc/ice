@@ -95,21 +95,17 @@ def declare(label, name, init = None):
 				f'Got {len(init)} instead.')
 		var.init = init
 
-def get_var(name, cast = None):
+def get_var(name):
 	if name.isdigit():
 		size_n = (int(name).bit_length()-1).bit_length()
 		if size_n > 6: err(f'ValueError: Literal too big to fit in 64 bits.')
-		# if cast and labels.get_size_n(labels.get_size(cast)) < size_n:
-		# 	err(f'TypeError: Overflow for cast of {name} to label {cast!r}')
-		if Shared.debug: print(f'  GOT VAR: {Literal(cast or "6", name)}')
-		return Literal(cast or '6', name)
+		var = Literal('6', name)
+		if Shared.debug: print(f'  GOT VAR: {var}')
+		return var
 	if not name.isidentifier():
 		err(f'SyntaxError: {name!r} is not a valid identifier.')
 	if name not in variables: err(f'NameError: {name!r} not declared.')
 	var = variables[name]
-	if cast and labels.get_size(cast) > var.size:
-		err(f'TypeError: label {cast!r} is bigger than {name!r}. '
-			'Cannot cast.')
 	if Shared.debug: print(f'  GOT VAR: {var}')
 	return var
 
@@ -122,20 +118,25 @@ def uni_fill(uni_chain, label):
 def parse(exp) -> ('size_n', 'imm'):
 	uni_chain = []
 	args = []
-	label   = None
-	b_label = None
-	bin_op  = None  # remembered for use after unary operations
+	cast = None
+	term_label = None
+	exp_label = None  # label of the expression so far
+	bin_op  = None  # operation to perform after parsing current term
 	imm = None
 
 	if Shared.debug: print('PARSE BEGIN')
 	for token in Patterns.token.finditer(exp):
 		if Shared.debug:
-			print(f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
+			print(f'  STATE: {cast = }, {term_label = }, {exp_label = }, '
+				f'{bin_op = }, {imm = }')
 			print(f'TOKEN: {token[0]!r}')
-		if bin_op is EXPECTED: # expecting a binary operator
+
+		if bin_op is EXPECTED:
 			if token[0] not in binary:
 				err('SyntaxError: Expected binary operator.')
-			bin_op = functions.encode(b_label, binary[token[0]])
+			bin_op = functions.encode(exp_label, binary[token[0]])
+			exp_label = None
+			term_label = None
 			continue
 
 		if token['symbol']: # Expecting unary. Got some symbol.
@@ -146,107 +147,134 @@ def parse(exp) -> ('size_n', 'imm'):
 				err(f'SyntaxError: Invalid unary operator {token["symbol"]!r}.')
 			uni_chain.append(token['symbol'])
 			if Shared.debug: print('  UNI CHAIN:', uni_chain)
-			label = None
 			continue
 
-		if token['label']:
-			if label is not None: continue
-			label = token['label']
-			uni_fill(uni_chain, label)
-			if Shared.debug: print(f'  CAST: {uni_chain = }')
+		if token['cast']:
+			uni_fill(uni_chain, token['cast'])
+			if Shared.debug: print('  UNI CHAIN:', uni_chain)
+			if term_label is None:
+				if uni_chain: term_label = functions.get_label(uni_chain[0])
+				else: term_label = token['cast']
 			continue
 
-
-		if uni_chain:
-			if Shared.debug:
-				print('  UNI CHAIN:', uni_chain)
-				print(
-					f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
-
-			assert bool(label) != (uni_chain[-1] in unary)
 
 		# Decode token
+
 		if token['subject'] in keywords:
 			err(f'Keyword {token["subject"]!r} not allowed in expression.')
 
+		# token may have a suffix()[]
 		args = []
+		inner_label = None
 		imm = None
-		enc_op = None
+		suffix_op = None
 		if token['args'] is not None:  # required for empty arg lists
 			if not token['method']:
-				enc_op = functions.encode('', token['subject'])
+				suffix_op = functions.encode('', token['subject'])
 			else:
 				var = get_var(token['subject'])
 				args.append(var)
-				enc_op = functions.encode(var.get_label(), token['method'])
-			label = functions.get_label(enc_op)
-			arg_labels = functions.get_arg_labels(enc_op)[len(args):] # subject
+				suffix_op = functions.encode(var.get_label(), token['method'])
+			inner_label = functions.get_label(suffix_op)
+			arg_labels = functions.get_arg_labels(suffix_op)[len(args):]
 			for arg, arg_label in zip(token['args'].split(','), arg_labels):
 				if Shared.debug:
 					print(f'  ARG: {arg.strip()!r} as @{arg_label}')
-				args.append(get_var(arg.strip(), arg_label))
-				if args[-1].get_label() is None:
-					err(f'NameError: {args[-1].name!r} is not yet declared.')
+				arg = get_var(arg.strip())
+				args.append(arg)
+				if arg.get_label() is None:
+					err(f'NameError: {arg.name!r} is not yet declared.')
 			# if Shared.debug: print('  ARGS:', args)
 		elif token['item']:
 			var = get_var(token['subject'])
 			if var.get_label() is None:
 				err(f'NameError: {var.name!r} is not yet declared.')
-			enc_op = functions.encode(var.get_label(), '__getitem__')
-			label = functions.get_label(enc_op)
-			index_label = functions.get_arg_labels(enc_op)[1]
+			suffix_op = functions.encode(var.get_label(), '__getitem__')
+			inner_label = functions.get_label(suffix_op)
+			index_label = functions.get_arg_labels(suffix_op)[1]
 			index = get_var(token['item'], index_label)
 			if index.get_label() is None:
 				err(f'NameError: {index.name!r} is not yet declared.')
 			args.extend([var, index])
 		else:
-			var = get_var(token['subject'], label)
+			var = get_var(token['subject'])
 			if var.get_label() is None:
 				err(f'NameError: {var.name!r} is not yet declared.')
-			if isinstance(var, Literal) and not label: imm = var
-			label = label or var.get_label()
+			if isinstance(var, Literal) and not (bin_op or term_label):
+				imm = var
+			inner_label = var.get_label()
 
-		uni_fill(uni_chain, label)
+		uni_fill(uni_chain, inner_label)
 
 		# Call suffixes and uni_chain.
 		if bin_op: output('mov rcx, rax')
-		if enc_op is not None: functions.call(enc_op, args)
+		if suffix_op is not None: functions.call(suffix_op, args)
 		elif uni_chain:
 			enc_op = uni_chain.pop()
+			arg_label = functions.get_arg_labels(enc_op)[0]
+			if labels.get_size(arg_label) > labels.get_size(inner_label): err(
+				f'TypeError: label {arg_label!r} is too big for casting. '
+				f'Expected at most {labels.get_size(inner_label)}, '
+				f'got {labels.get_size(arg_label)} bytes')
+
 			functions.call(enc_op, (var,))
-			label = functions.get_label(enc_op)
+			inner_label = functions.get_label(enc_op)
 			imm = None
-		else: output(f'mov {get_reg("a", var.size_n, var)}, {var.get_clause()}')
+		else:
+			if term_label:
+				if labels.get_size(term_label) > labels.get_size(inner_label):
+				  err(
+				    f'TypeError: label {term_label!r} is too big for casting. '
+				    f'Expected at most {labels.get_size(inner_label)}, '
+				    f'got {labels.get_size(term_label)} bytes')
+			output(f'mov {get_reg("a", var.size_n, var)}, {var.get_clause()}')
+
 		for enc_op in reversed(uni_chain):
-			functions.call(enc_op, (Register(label, 'a'),))
-			label = functions.get_label(enc_op)
+			arg_labels = functions.get_arg_labels(enc_op)
+			if len(arg_labels) != 1: err('TypeError: '
+				f'{enc_op!r} does not take one argument')
+			arg_label = arg_labels[0]
+			# assuming arg_label != inner_label only if cast
+
+			# TODO: correct size checking for real function calls
+			if labels.get_size(arg_label) > labels.get_size(inner_label): err(
+				f'TypeError: label {arg_label!r} is too big for casting. '
+				f'Expected at most {labels.get_size(inner_label)}, '
+				f'got {labels.get_size(arg_label)} bytes')
+			functions.call(enc_op, (Register(arg_label, 'a'),))
+			inner_label = functions.get_label(enc_op)
+
+		if term_label is None: term_label = inner_label
+		elif labels.get_size(term_label) > labels.get_size(inner_label): err(
+				f'TypeError: label {term_label!r} is too big for casting. '
+				f'Expected at most {labels.get_size(term_label)}, '
+				f'got {labels.get_size(inner_label)} bytes')
 
 		if bin_op is not None:
 			arg_labels = functions.get_arg_labels(bin_op)
 			if len(arg_labels) != 2: err('TypeError: '
 				f'{bin_op!r} does not take 2 arguments')
-			if (not imm
-			  and labels.get_size_n(arg_labels[1]) > labels.get_size_n(label)):
-				err(f'TypeError: Incompatible size for {bin_op!r} '
-					f'{labels.get_size_n(arg_labels[1])} vs {labels.get_size_n(label)}')
+			# if labels.get_size(arg_labels[1]) > labels.get_size(term_label):
+			# 	err(f'TypeError: Incompatible size for {bin_op!r}. '
+			# 		f'Expected at most {labels.get_size(term_label)}, '
+			# 		f'got {labels.get_size(arg_labels[1])} bytes')
 			functions.call(bin_op,
-				(Register(b_label, 'c'), Register(label, 'a')))
-			b_label = functions.get_label(bin_op)
+				(Register(arg_labels[0], 'c'), Register(arg_labels[1], 'a')))
+			exp_label = functions.get_label(bin_op)
 			imm = None
 
 		# first term
-		elif uni_chain: b_label = functions.get_label(uni_chain[0])
-		else: b_label = label
+		else: exp_label = term_label
 
-		label = None
 		bin_op = EXPECTED
 		uni_chain = []
 
 	if Shared.debug:
-		print(f'  STATE: {label = }, {b_label = }, {bin_op = }, {imm = }')
+		print(f'  STATE: {cast = }, {term_label = }, {exp_label = }, '
+			f'{bin_op = }, {imm = }')
 		print('PARSE END %r' % exp)
-	if b_label is None: return None
-	return labels.get_size_n(labels.get_size(b_label)), imm
+	if bin_op is not EXPECTED: err('SyntaxError: Invalid expression.')
+	return labels.get_size_n(labels.get_size(exp_label)), imm
 
 def assign(dest, size_n, imm: Literal = None):
 	# TODO: get LHS (assuming rax rn)
