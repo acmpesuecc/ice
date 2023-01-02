@@ -16,6 +16,8 @@ token = _compile(rf'@(?P<cast>{_label})|(?P<subject>\d+|[a-zA-Z_]\w*)'
 	r'\[(?P<item>.*?)\]' ')?|'
 	r'(?P<symbol>[!<=>]=|<<|>>|//|\S)')  # __pow__? ^^? but it isn't default...
 keywords = _compile(r'\s*\b(if|elif|while|else)\b(.*?)(:\s*)?$')
+function = _compile(rf'(@({_label})\s+|{_shape}[3-6])?(?P<name>[A-Za-z_]\w*)\s*'
+					r'\((?P<args>.*?)\)\s*:')  # the colon decides if it's a fun
 
 stmt  = _compile(r'(\s*)((?:\'(?:\\?.)*?\'|"(?:\\?.)*?"|[^#])*)')
 

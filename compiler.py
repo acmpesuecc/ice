@@ -476,7 +476,7 @@ class passes:
 		if Shared.debug: print()
 
 	@staticmethod
-	def codegen():
+	def codegen(*, is_function = False, start_line = 1, function_locals = {}):
 		# Writing to the text segment
 
 		next_ladder_id = 0
@@ -485,16 +485,24 @@ class passes:
 
 		indent_stack = ['']
 		prev_indent  = ''
-		expect_indent = False
+		expect_indent = is_function
+		skipping_function = False
 
 		label_level = 0
 
-		for Shared.line_no, Shared.line in enumerate(infile, 1):
+		for Shared.line_no, Shared.line in enumerate(infile, start_line):
 			match = Patterns.stmt.match(Shared.line)
 			if not match: err('SyntaxError: EOL in string')  # only possibility?
 
 			curr_indent, Shared.line = match[1], match[2]
 			if not Shared.line.rstrip(): continue
+
+			if skipping_function:
+				# requires function definitions to be at outermost indentation
+				# label definitions will also get skipped after I implement them
+				if curr_indent == '': skipping_function = False
+				else: continue
+
 			if Shared.debug:
 				print('\nLINE %d: %r' % (Shared.line_no, Shared.line))
 				output('\n; %d: %r' % (Shared.line_no, Shared.line))
@@ -533,10 +541,22 @@ class passes:
 				for var in variables:
 					get_var(var).set_label_level(label_level)
 
+				if is_function and label_level == 0: break  # stop reading file
+
 			# if Shared.debug: print(f'INDENT: {indent_stack = } '
 			# 	f' from {prev_indent!r} to {curr_indent!r}')
 			prev_indent = curr_indent
 
+
+			function = Patterns.function.match(Shared.line)
+			if function is not None:
+				if is_function:
+					err('SyntaxError: local functions are not allowed.')
+				if curr_indent != '':
+					err('SyntaxError: functions are not allowed in constructs')
+
+				skipping_function = True
+				continue
 
 			if kw is None:
 				# handle shorthand assignments += -= *= /= %= &= |= ^= <<= >>= //=
