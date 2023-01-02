@@ -38,9 +38,10 @@ def decode_args(arg_labels, p, e) -> list[str]:
 	arg_labels = arg_labels.copy()
 
 	# TODO: add support for dynamic arrays
+	# TODO: Use `p` as parameter
 
 	if p == '*': p = '6'
-	elif e: p = int(p[1:-1]); e = str(labels.get_size(e))
+	elif e: p += e
 	for i, size_n in enumerate(arg_labels):
 		if   size_n == 's': arg_labels[i] = p
 		elif size_n == 'e': arg_labels[i] = e
