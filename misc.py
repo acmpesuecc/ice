@@ -67,7 +67,7 @@ def err(msg):
 def get_reg(reg: r'[abcd]|[ds]i|[sbi]p|r(8|9|1[1-5])', size_n, var = None):
 	if not size_n:
 		if var is None: err("TypeError: Can't fit in a register.")
-		err(f"TypeError: Can't fit {var} in a register.")
+		err(f"TypeError: Can't fit @{var.get_label()} in a register.")
 	if reg in 'abcd':
 		l, r = reg_list[size_n]
 		return l+reg+r
@@ -106,7 +106,7 @@ class Variable:
 		# TODO: add logic for scope level
 		return self.labels[-1]
 
-	def set_label(self, label):  # might make this a @property
+	def set_label(self, label, level):  # might make this a @property
 		if Patterns.empty.fullmatch(label):
 			# assume non-inits have been ruled out
 			arr_len = len(self.init) // labels.element_size(label)
@@ -116,8 +116,18 @@ class Variable:
 			# TODO: plural
 			err(f'TypeError: Cannot set label {label!r} for {self.name!r} '
 				f'(Requires {self.size} bytes, got {labels.get_size(label)})')
-		self.labels[-1] = label
+		while level >= len(self.labels): self.labels.append(self.labels[-1])
+		if Shared.debug: print('  LABEL CHANGED:', self, end = ' -> ')
+		self.labels[level] = label
+		if Shared.debug: print(self)
 		return label  # returns because it changes if empty label
+
+	def set_label_level(self, level):
+		if level < len(self.labels)-1:
+			if Shared.debug: print('  LABEL CHANGED:', self, end = ' -> ')
+			self.labels = self.labels[:level+1]
+			if Shared.debug: print(self)
+		# if Shared.debug: print('LABEL STACK:', self.labels)
 
 	def get_clause(self, unit = False):
 		return f'{size_list[self.size_n]} [{self.enc_name}]'

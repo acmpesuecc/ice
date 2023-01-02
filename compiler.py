@@ -204,6 +204,7 @@ def parse(exp) -> ('size_n', 'imm'):
 				imm = var
 			inner_label = var.get_label()
 
+		if Shared.debug: print('STATE: inner_label =', inner_label)
 		uni_fill(uni_chain, inner_label)
 
 		# Call suffixes and uni_chain.
@@ -211,7 +212,10 @@ def parse(exp) -> ('size_n', 'imm'):
 		if suffix_op is not None: functions.call(suffix_op, args)
 		elif uni_chain:
 			enc_op = uni_chain.pop()
+			if Shared.debug:
+				print('STATE: arg_labels =', functions.get_arg_labels(enc_op))
 			arg_label = functions.get_arg_labels(enc_op)[0]
+			if Shared.debug: print('STATE: %r, %r', (arg_label, inner_label))
 			if labels.get_size(arg_label) > labels.get_size(inner_label): err(
 				f'TypeError: label {arg_label!r} is too big for casting. '
 				f'Expected at most {labels.get_size(inner_label)}, '
@@ -486,6 +490,8 @@ class passes:
 		prev_indent  = ''
 		expect_indent = False
 
+		label_level = 0
+
 		for Shared.line_no, Shared.line in enumerate(infile, 1):
 			match = Patterns.stmt.match(Shared.line)
 			if not match: err('SyntaxError: EOL in string')  # only possibility?
@@ -503,6 +509,7 @@ class passes:
 					or not curr_indent.startswith(prev_indent)):
 					err('IndentationError: Expected indent block.')
 				indent_stack.append(curr_indent)
+				label_level += 1
 				expect_indent = False
 			elif curr_indent != prev_indent:
 				for dedents, indent in enumerate(reversed(indent_stack), 0):
@@ -523,6 +530,11 @@ class passes:
 				# )
 				dedent(indent_stack, branch_stack, ladder_stack,
 					end = not (kw and kw[1] in elses))
+
+				label_level -= dedents
+				if Shared.debug: print('LABEL LEVEL = ', label_level)
+				for var in variables:
+					get_var(var).set_label_level(label_level)
 
 			# if Shared.debug: print(f'INDENT: {indent_stack = } '
 			# 	f' from {prev_indent!r} to {curr_indent!r}')
@@ -545,15 +557,16 @@ class passes:
 					if decl[2]:
 						label = decl[2]
 						# accepts multi non-@ decl
-						get_var(decl[3]).set_label(label)
-						for var in exp.split()[2:]: get_var(var).set_label(label)
+						get_var(decl[3]).set_label(label, label_level)
+						for var in exp.split()[2:]:
+							get_var(var).set_label(label, label_level)
 						continue
 
 					label = decl[1]
 					for decl in exp.split():
 						match = Patterns.decl.match(decl)
 						label, var = match[1], match[3]
-						get_var(var).set_label(label)
+						get_var(var).set_label(label, label_level)
 					continue
 
 				# (re)declaration with assignment
@@ -563,7 +576,7 @@ class passes:
 						f'(exp: {Patterns.decl.match(exp)})')
 					label = decl[2] or decl[1]
 					var = get_var(decl[3])
-					var.set_label(label)
+					var.set_label(label, label_level)
 
 				if not exp or exp[0] not in '["\'': size_n, imm = parse(exp)
 				elif decl: dest = '' # sequence literals only initialise right now
