@@ -286,6 +286,8 @@ def assign(dest, size_n, imm: Literal = None):
 	deref, dest, index = match[2], match[3], match[4]
 	# print(dest, (var, index), sep = ' -> ')
 
+	if Shared.debug: print(f'ASSIGN: {dest = }, {size_n = }, {imm = }')
+
 	if dest.isdigit(): err("SyntaxError: Can't assign to literal.")
 
 	if dest not in variables: err(f'NameError: {dest!r} not declared.')
@@ -299,12 +301,9 @@ def assign(dest, size_n, imm: Literal = None):
 		arg_labels = functions.get_arg_labels(fun)
 		# if Shared.debug: print(f'{fun = }, {arg_labels = }, {index = }')
 		
-		if index.isdigit(): index = Literal(arg_labels[1], index)
-		elif index not in variables: err(f'NameError: {index!r} not declared.')
-		else: index = variables[index]
+		index = get_var(index)
 
-		if imm is None: val = Register(arg_labels[2], 'a')
-		else: val = imm.encode()
+		val = imm or Register(arg_labels[2], 'a')
 
 		functions.call(fun, (dest, index, val))
 		return
@@ -316,12 +315,10 @@ def assign(dest, size_n, imm: Literal = None):
 		fun = functions.encode(dest.get_label(), '__setat__')
 		label = functions.get_arg_labels(fun)[1]
 
-		if imm is None: val = Register(label, 'a')
-		else: val = imm.encode()
+		val = imm or Register(label, 'a')
 		functions.call(fun, (dest, val))
 		return
 
-	if Shared.debug: print(f'ASSIGN: {dest = }, {size_n = }')
 	# if not imm and dest.size_n != size_n:
 	# 	err('TypeError: assignment sizes do not match')
 	if dest.size_n == 0: err('TypeError: invalid destination size.')
