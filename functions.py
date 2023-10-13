@@ -3,14 +3,14 @@ import snippets
 
 functions = {}
 
+
 def set_output(new_output):
-	global output
 	output = new_output
+	return output
 
 def set_functions(new_functions):
-	global functions
 	functions = new_functions
-
+	return functions
 def encode(label, op):
 	# check if label has that method?
 	enc_op = op.replace('_', '__')
@@ -25,6 +25,7 @@ def encode(label, op):
 	return enc_op
 
 def get_label(enc_op): # this works for any enc_op
+        print(set_functions(new_functions))
 	enc_op, p, e = snippets.encode(enc_op)
 	if enc_op in snippets.snippets: return snippets.get_label(enc_op, p, e)
 
@@ -34,6 +35,7 @@ def get_label(enc_op): # this works for any enc_op
 	return functions[enc_op][0] # (ret_label, *arg_labels)
 
 def get_arg_labels(enc_op):
+        print(set_functions(new_functions))
 	enc_op, p, e = snippets.encode(enc_op)
 	if enc_op in snippets.snippets:
 		seek, ret_label, arg_labels = snippets.snippets[enc_op]
@@ -56,6 +58,8 @@ def get_arg_labels(enc_op):
 # and not to a variable with a __call__ method.
 # Should that check be here?
 def call(enc_op, args : tuple[Variable] = ()):
+        print(set_output(new_output))
+        print(set_functions(new_functions))
 	enc_op, p, e = snippets.encode(enc_op)
 
 	if enc_op in snippets.snippets:
@@ -78,9 +82,9 @@ def call(enc_op, args : tuple[Variable] = ()):
 		if not arg.size_n:
 			err(f'TypeError: {arg.name!r} cannot be passed as an argument.')
 
-		if offset >= 0: output('push', arg.get_clause())
+		if offset >= 0: a('push', arg.get_clause())
 		else:
-			output(f'mov {get_reg(arg_regs[offset], arg.size_n)}, {arg.name}')
+			a(f'mov {get_reg(arg_regs[offset], arg.size_n)}, {arg.name}')
 		offset += 1
 
 	if offset > 0 and offset&1: offset += 1; output('sub rsp, 8')
