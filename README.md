@@ -37,7 +37,7 @@ It isn't quite easy yet. There are a couple of the steps.
 > <path to nasm> -fwin64 <assembly_file_name>.asm -o <object_file_name>.o
 > <path to gcc> <object_file_name>.o -o <executable_file_name>.exe
 ```
-`nasm` and `gcc` are found in their corresponding `bin` folders. Alternatively, you can add the `bin` folders to your path variables to avoid typing the path a every time.
+`nasm` and `gcc` are found in their corresponding `bin` folders. Alternatively, you can add the `bin` folders to your path variables to avoid typing the path every time.
 
 **Build on Linux (and perhaps macOS)**
 ```bash
@@ -45,3 +45,6 @@ $ python3 <path_to_compiler>/compiler.py <ice_file_name>.ice <assembly_file_name
 $ nasm -felf64 <assembly_file_name>.asm -o <object_file_name>.o
 $ gcc -no-pie <object_file_name>.o -o <binary_file_name>
 ```
+
+#### Contributor
+Sanket Padhi @cubed-guy
