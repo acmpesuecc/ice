@@ -5,12 +5,11 @@ functions = {}
 
 
 def set_output(new_output):
-	output = new_output
-	return output
-
+	set_output.output = new_output
+	
 def set_functions(new_functions):
-	functions = new_functions
-	return functions
+	set_functions.functions = new_functions
+	
 def encode(label, op):
 	# check if label has that method?
 	enc_op = op.replace('_', '__')
@@ -25,26 +24,24 @@ def encode(label, op):
 	return enc_op
 
 def get_label(enc_op): # this works for any enc_op
-        print(set_functions(new_functions))
-	enc_op, p, e = snippets.encode(enc_op)
+	enc_op,p,e=snippets.encode(enc_op)
 	if enc_op in snippets.snippets: return snippets.get_label(enc_op, p, e)
 
 	# Is it possible for snippet encode to run if enc_op in functions?
-	if enc_op not in functions:
+	if enc_op not in set_functions.functions:
 		err(f'NameError: function {enc_op!r} not defined.')
-	return functions[enc_op][0] # (ret_label, *arg_labels)
+	return set_functions.functions[enc_op][0] # (ret_label, *arg_labels)
 
 def get_arg_labels(enc_op):
-        print(set_functions(new_functions))
 	enc_op, p, e = snippets.encode(enc_op)
 	if enc_op in snippets.snippets:
 		seek, ret_label, arg_labels = snippets.snippets[enc_op]
 		return snippets.decode_args(arg_labels, p, e)
 
 	# Is it possible for snippet encode to run if enc_op in functions?
-	if enc_op not in functions:
+	if enc_op not in set_functions.functions:
 		err(f'NameError: function {enc_op!r} not defined.')
-	return functions[enc_op][1:] # (ret_label, *arg_labels)
+	return set_functions.functions[enc_op][1:] # (ret_label, *arg_labels)
 
 # def call_function(subject, op, args = (), label = None):
 	# if label is not None: enc_op = fun_encode(label, op); args = (subject,)+args
@@ -58,8 +55,6 @@ def get_arg_labels(enc_op):
 # and not to a variable with a __call__ method.
 # Should that check be here?
 def call(enc_op, args : tuple[Variable] = ()):
-        print(set_output(new_output))
-        print(set_functions(new_functions))
 	enc_op, p, e = snippets.encode(enc_op)
 
 	if enc_op in snippets.snippets:
@@ -67,7 +62,7 @@ def call(enc_op, args : tuple[Variable] = ()):
 		if Shared.debug: print(f'  CALLED: {enc_op} (snippet) with {args}')
 		return
 
-	if enc_op not in functions:
+	if enc_op not in set_functions.functions:
 		err(f'NameError: Function {enc_op!r} not defined.')
 
 	arg_labels = functions[enc_op][1:]
@@ -89,9 +84,9 @@ def call(enc_op, args : tuple[Variable] = ()):
 
 	if offset > 0 and offset&1: offset += 1; output('sub rsp, 8')
 	# if vector_fun: output(f'mov rax, {vectors}')
-	output('push rbp')
-	output('call', enc_op)
-	output('pop rbp')
-	if offset > 0: output('add rsp,', offset*8)
+	set_output.output('push rbp')
+	set_output.output('call', enc_op)
+	set_output.output('pop rbp')
+	if offset > 0: set_output.output('add rsp,', offset*8)
 
 	if Shared.debug: print(f'  CALLED: {enc_op} (function) with {args}')
