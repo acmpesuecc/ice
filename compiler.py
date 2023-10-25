@@ -671,6 +671,30 @@ class passes:
 		while len(indent_stack) > 1:
 			dedent(indent_stack, branch_stack, ladder_stack)
 
+def call_function(function_name, args):
+    # Function Prologue
+    output(f"push rbp")
+    output(f"push rbx")
+
+    # Load function arguments into registers
+    for i, arg in enumerate(args):
+        output(f"mov {get_reg('a', arg.size_n, arg)}, {arg.get_clause()}")
+
+    # Function Call
+    output(f"call {function_name}")
+
+    # Function Epilogue
+    output(f"pop rbx")
+    output(f"pop rbp")
+
+    # Handle return value (if any)
+    output(f"mov rax, <return_value_register>")
+
+# Example function call
+args = [get_var("arg1"), get_var("arg2")]
+call_function("my_function", args)
+
+
 if __name__ == '__main__':
 	infile = open(argv[1])
 	out = open(argv[2], 'w')

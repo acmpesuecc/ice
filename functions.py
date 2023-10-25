@@ -55,20 +55,22 @@ def get_arg_labels(enc_op):
 # Would take subject to check if it is a call to a function
 # and not to a variable with a __call__ method.
 # Should that check be here?
+
 def call(enc_op, args : tuple[Variable] = ()):
-	enc_op, p, e = snippets.encode(enc_op)
+	enc_op = encode(enc_op, '__call__')  # Assuming __call__ is the method to call functions
 
 	if enc_op in snippets.snippets:
-		snippets.insert(enc_op, args, p, e)
-		if Shared.debug: print(f'  CALLED: {enc_op} (snippet) with {args}')
+		snippets.insert(enc_op, args)
+		if Shared.debug:
+			print(f'  CALLED: {enc_op} (snippet) with {args}')
 		return
 
 	if enc_op not in functions:
 		err(f'NameError: Function {enc_op!r} not defined.')
 
-	arg_labels = functions[enc_op][1:]
+	arg_labels = get_arg_labels(enc_op)
 
-	# TODO: plural
+	# Check if the number of arguments matches the function's signature.
 	if len(args) != len(arg_labels):
 		err(f'TypeError: {enc_op!r} takes exactly {len(arg_labels)} arguments '
 			f'({len(args)} given)')
@@ -78,16 +80,24 @@ def call(enc_op, args : tuple[Variable] = ()):
 		if not arg.size_n:
 			err(f'TypeError: {arg.name!r} cannot be passed as an argument.')
 
-		if offset >= 0: output('push', arg.get_clause())
+		if offset >= 0:
+			output('push', arg.get_clause())
 		else:
 			output(f'mov {get_reg(arg_regs[offset], arg.size_n)}, {arg.name}')
 		offset += 1
 
-	if offset > 0 and offset&1: offset += 1; output('sub rsp, 8')
-	# if vector_fun: output(f'mov rax, {vectors}')
+	if offset > 0 and offset % 2 != 0:
+		offset += 1
+		output('sub rsp, 8')
+
 	output('push rbp')
 	output('call', enc_op)
 	output('pop rbp')
-	if offset > 0: output('add rsp,', offset*8)
 
-	if Shared.debug: print(f'  CALLED: {enc_op} (function) with {args}')
+	if offset > 0:
+		output(f'add rsp, {offset * 8}')
+
+	if Shared.debug:
+		print(f'  CALLED: {enc_op} (function) with {args}')
+
+
